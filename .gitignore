@@ -10,12 +10,24 @@
 !.yarn/releases
 !.yarn/versions
 
+echo "node_modules/
+.next/
+.env.local
+.env.production
+.DS_Store
+*.log" > .gitignore
+
 # testing
 /coverage
 
 # next.js
 /.next/
 /out/
+
+.env
+.env.local
+.env.production
+.env.*.local
 
 # production
 /build
