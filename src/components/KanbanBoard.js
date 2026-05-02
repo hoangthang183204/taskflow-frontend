@@ -230,6 +230,9 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
   };
 
   const handleDragEnd = async (result) => {
+    console.log("🔍 DRAG ENDED:", result);
+    console.log("source:", result.source);
+    console.log("destination:", result.destination);
     const { source, destination, draggableId } = result;
     if (!destination) return;
     if (
@@ -258,13 +261,13 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
         toast.success(
           `Đã chuyển task sang ${columns.find((c) => c.id === destColumn)?.title}`,
         );
-        
+
         // ✅ NẾU CHUYỂN SANG "DONE", HIỂN THỊ MOODPICKER
         if (destColumn === "done") {
           setCompletedTaskId(taskId);
           setShowMoodPicker(true);
         }
-        
+
         onTaskUpdate?.();
       } catch (error) {
         toast.error("Không thể cập nhật trạng thái task");
