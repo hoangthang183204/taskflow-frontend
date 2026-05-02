@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import useAuthStore from "@/store/authStore";
 import useToast from "@/hooks/useToast";
-import { deleteAccount } from "@/services/api";
+import { updateProfile, changePassword, deleteAccount } from "@/services/api";
 
 export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
@@ -36,35 +36,23 @@ export default function ProfilePage() {
     setLoading(false);
   }, [isAuthenticated, token, user, router]);
 
-  const updateProfile = async () => {
+  const handleUpdateProfile = async () => {
     if (!token) return;
     try {
       setUpdating(true);
-      const response = await fetch("http://localhost:1337/api/auth/profile", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(formData),
-      });
-      const data = await response.json();
-      if (data.success) {
-        const updatedUser = { ...user, name: formData.name, email: formData.email };
-        updateUser(updatedUser);
-        setEditing(false);
-        toast.success("Cập nhật thông tin thành công!");
-      } else {
-        toast.error(data.message);
-      }
+      await updateProfile(token, formData);
+      const updatedUser = { ...user, name: formData.name, email: formData.email };
+      updateUser(updatedUser);
+      setEditing(false);
+      toast.success("Cập nhật thông tin thành công!");
     } catch (error) {
-      toast.error("Lỗi: " + error.message);
+      toast.error(error.message || "Không thể cập nhật");
     } finally {
       setUpdating(false);
     }
   };
 
-  const changePassword = async () => {
+  const handleChangePassword = async () => {
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       toast.warning("Mật khẩu mới không khớp");
       return;
@@ -75,26 +63,14 @@ export default function ProfilePage() {
     }
     try {
       setUpdating(true);
-      const response = await fetch("http://localhost:1337/api/auth/change-password", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          oldPassword: passwordData.oldPassword,
-          newPassword: passwordData.newPassword,
-        }),
+      await changePassword(token, {
+        oldPassword: passwordData.oldPassword,
+        newPassword: passwordData.newPassword,
       });
-      const data = await response.json();
-      if (data.success) {
-        toast.success("Đổi mật khẩu thành công!");
-        setPasswordData({ oldPassword: "", newPassword: "", confirmPassword: "" });
-      } else {
-        toast.error(data.message);
-      }
+      toast.success("Đổi mật khẩu thành công!");
+      setPasswordData({ oldPassword: "", newPassword: "", confirmPassword: "" });
     } catch (error) {
-      toast.error("Lỗi: " + error.message);
+      toast.error(error.message || "Không thể đổi mật khẩu");
     } finally {
       setUpdating(false);
     }
@@ -232,7 +208,7 @@ export default function ProfilePage() {
                   {editing ? (
                     <div className="flex gap-3">
                       <button
-                        onClick={updateProfile}
+                        onClick={handleUpdateProfile}
                         disabled={updating}
                         className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-medium transition disabled:opacity-50 shadow-sm"
                       >
@@ -310,7 +286,7 @@ export default function ProfilePage() {
                   />
                 </div>
                 <button
-                  onClick={changePassword}
+                  onClick={handleChangePassword}
                   disabled={updating}
                   className="w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl font-medium transition disabled:opacity-50 shadow-sm mt-3"
                 >
