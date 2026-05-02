@@ -161,5 +161,3 @@ export const deleteAccount = async (token) => {
   });
   return result;
 };
-
-
