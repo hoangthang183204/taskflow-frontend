@@ -504,14 +504,17 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
                         {boardTasks[column.id].map((task, index) => (
                           <Draggable
                             key={task.id}
-                            draggableId={task.id}
+                            draggableId={String(task.id)}
                             index={index}
+                            isDragDisabled={editingTask === task.id}
                           >
-                            {(provided) => (
+                            {(provided, snapshot) => (
                               <div
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
+                                className={`mb-3 ${snapshot.isDragging ? "dragging" : ""}`}
+                                style={provided.draggableProps.style}
                               >
                                 <TaskCard task={task} />
                               </div>
