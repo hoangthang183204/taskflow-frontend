@@ -1,21 +1,8 @@
 // components/KanbanBoard.js
 "use client";
 import { useState, useEffect } from "react";
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragOverlay,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
+// import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import {
   updateTask,
   deleteTask,
@@ -26,8 +13,7 @@ import {
 import { toast } from "sonner";
 import EditTaskModal from "./EditTaskModal";
 import PomodoroTimer from "./PomodoroTimer";
-import MoodPicker from "./MoodPicker";
-import SortableTaskCard from "./SortableTaskCard";
+import MoodPicker from "./MoodPicker"; // ✅ THÊM IMPORT
 
 const columns = [
   {
@@ -72,20 +58,8 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [openColumn, setOpenColumn] = useState(null);
   const [timerTask, setTimerTask] = useState(null);
-  const [showMoodPicker, setShowMoodPicker] = useState(false);
-  const [completedTaskId, setCompletedTaskId] = useState(null);
-  const [activeId, setActiveId] = useState(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
+  const [showMoodPicker, setShowMoodPicker] = useState(false); // ✅ THÊM STATE
+  const [completedTaskId, setCompletedTaskId] = useState(null); // ✅ THÊM STATE
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -93,10 +67,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
-
-  useEffect(() => {
-    setEditingTask(null);
-  }, [tasks]);
 
   useEffect(() => {
     const activeTasks = tasks.filter((t) => !t.isArchived);
@@ -197,7 +167,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
           dueDate: editDueDate || null,
           priority: editPriority,
         },
-        token
+        token,
       );
       toast.success("Cập nhật thành công");
       setEditingTask(null);
@@ -260,89 +230,56 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     }
   };
 
-  const handleDragEnd = async (event) => {
-    const { active, over } = event;
-    setActiveId(null);
+  const handleDragEnd = async (result) => {
+    console.log("🔍 DRAG ENDED:", result);
+    console.log("source:", result.source);
+    console.log("destination:", result.destination);
+    const { source, destination, draggableId } = result;
+    if (!destination) return;
+    if (
+      source.droppableId === destination.droppableId &&
+      source.index === destination.index
+    )
+      return;
 
-    if (!over) return;
-
-    const activeId = active.id;
-    const overId = over.id;
-
-    // Tìm column chứa task đang kéo và column đích
-    let sourceColumn = null;
-    let destColumn = null;
-    let sourceIndex = -1;
-    let destIndex = -1;
-
-    for (const col of ["todo", "doing", "done"]) {
-      const idx = boardTasks[col].findIndex((t) => String(t.id) === activeId);
-      if (idx !== -1) {
-        sourceColumn = col;
-        sourceIndex = idx;
-        break;
-      }
-    }
-
-    // Kiểm tra overId là task hay column
-    if (overId.startsWith("column-")) {
-      destColumn = overId.replace("column-", "");
-      destIndex = boardTasks[destColumn].length;
-    } else {
-      for (const col of ["todo", "doing", "done"]) {
-        const idx = boardTasks[col].findIndex((t) => String(t.id) === overId);
-        if (idx !== -1) {
-          destColumn = col;
-          destIndex = idx;
-          break;
-        }
-      }
-    }
-
-    if (!sourceColumn || !destColumn) return;
-
-    const draggedTask = boardTasks[sourceColumn][sourceIndex];
+    const sourceColumn = source.droppableId;
+    const destColumn = destination.droppableId;
+    const taskId = draggableId;
+    const draggedTask = boardTasks[sourceColumn][source.index];
     if (!draggedTask) return;
 
-    // Cập nhật UI ngay lập tức
     const newBoardTasks = { ...boardTasks };
     newBoardTasks[sourceColumn] = [...newBoardTasks[sourceColumn]];
-    newBoardTasks[sourceColumn].splice(sourceIndex, 1);
+    newBoardTasks[sourceColumn].splice(source.index, 1);
     newBoardTasks[destColumn] = [...newBoardTasks[destColumn]];
-
-    if (sourceColumn === destColumn) {
-      newBoardTasks[destColumn].splice(destIndex, 0, draggedTask);
-    } else {
-      newBoardTasks[destColumn].splice(destIndex, 0, draggedTask);
-    }
+    newBoardTasks[destColumn].splice(destination.index, 0, draggedTask);
     setBoardTasks(newBoardTasks);
 
-    // Gọi API nếu chuyển column
     if (sourceColumn !== destColumn) {
-      setLoading((prev) => ({ ...prev, [draggedTask.id]: true }));
+      setLoading((prev) => ({ ...prev, [taskId]: true }));
       try {
-        await updateTask(draggedTask.id, { status: destColumn }, token);
+        await updateTask(taskId, { status: destColumn }, token);
         toast.success(
-          `Đã chuyển task sang ${columns.find((c) => c.id === destColumn)?.title}`
+          `Đã chuyển task sang ${columns.find((c) => c.id === destColumn)?.title}`,
         );
 
+        // ✅ NẾU CHUYỂN SANG "DONE", HIỂN THỊ MOODPICKER
         if (destColumn === "done") {
-          setCompletedTaskId(draggedTask.id);
+          setCompletedTaskId(taskId);
           setShowMoodPicker(true);
         }
 
         onTaskUpdate?.();
       } catch (error) {
         toast.error("Không thể cập nhật trạng thái task");
-        // Rollback UI
         setBoardTasks(boardTasks);
       } finally {
-        setLoading((prev) => ({ ...prev, [draggedTask.id]: false }));
+        setLoading((prev) => ({ ...prev, [taskId]: false }));
       }
     }
   };
 
-  const TaskCardContent = ({ task }) => {
+  const TaskCard = ({ task, showArchive = true }) => {
     const isEditing = editingTask === task.id;
     const isTaskLoading = loading[task.id];
 
@@ -453,7 +390,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
                 ✏️ Sửa
               </button>
             )}
-            {!task.isArchived && (
+            {showArchive && (
               <button
                 onClick={() => handleArchive(task.id)}
                 className={`flex-1 py-2 text-purple-600 hover:bg-purple-50 text-sm flex items-center justify-center gap-1 ${
@@ -496,53 +433,15 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     );
   };
 
-  const SortableTaskCard = ({ task }) => {
+  // Mobile view (accordion)
+  if (isMobile) {
     return (
-      <div className="mb-3 draggable-item">
-        <TaskCardContent task={task} />
-      </div>
-    );
-  };
-
-  const ColumnContent = ({ columnId, tasks }) => {
-    return (
-      <div
-        className={`${columns.find((c) => c.id === columnId)?.color} rounded-xl p-4 flex flex-col max-h-[calc(100vh-12rem)]`}
-      >
-        <div
-          className={`${columns.find((c) => c.id === columnId)?.headerColor} text-white p-3 rounded-lg mb-4 flex justify-between items-center flex-shrink-0`}
-        >
-          <h3 className="font-semibold">
-            {columns.find((c) => c.id === columnId)?.icon}{" "}
-            {columns.find((c) => c.id === columnId)?.title}
-          </h3>
-          <span className="bg-white/20 px-2 py-0.5 rounded-full text-sm">
-            {tasks.length}
-          </span>
-        </div>
-        <SortableContext
-          items={tasks.map((t) => String(t.id))}
-          strategy={verticalListSortingStrategy}
-        >
-          <div className="flex-1 overflow-y-auto rounded-lg p-2 space-y-2">
-            {tasks.map((task) => (
-              <SortableTaskCard key={task.id} task={task} />
-            ))}
-          </div>
-        </SortableContext>
-      </div>
-    );
-  };
-
-  // Desktop view
-  return (
-    <div>
-      <div className="mb-6 flex justify-end">
+      <div className="space-y-4">
         <button
           onClick={() => setShowArchived(!showArchived)}
-          className={`px-4 py-2 rounded-lg transition flex items-center gap-2 ${showArchived ? "bg-purple-500 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
+          className="w-full bg-purple-100 text-purple-700 p-3 rounded-lg flex justify-between items-center"
         >
-          📦 Kho lưu trữ ({archivedTasks.length})
+          <span>📦 Kho lưu trữ ({archivedTasks.length})</span>
           <svg
             className={`w-5 h-5 transition-transform ${showArchived ? "rotate-180" : ""}`}
             fill="none"
@@ -557,53 +456,161 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
             />
           </svg>
         </button>
+        {showArchived && archivedTasks.length > 0 && (
+          <div className="bg-purple-50 rounded-xl p-3">
+            {archivedTasks.map((task) => (
+              <TaskCard key={task.id} task={task} showArchive={false} />
+            ))}
+          </div>
+        )}
+        {columns.map((column) => (
+          <div
+            key={column.id}
+            className={`${column.color} rounded-xl overflow-hidden`}
+          >
+            <button
+              onClick={() =>
+                setOpenColumn(openColumn === column.id ? null : column.id)
+              }
+              className={`w-full ${column.headerColor} text-white p-4 flex justify-between items-center`}
+            >
+              <span>
+                <span className="text-xl">{column.icon}</span> {column.title}
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="bg-white/20 px-2 py-0.5 rounded-full text-sm">
+                  {boardTasks[column.id].length}
+                </span>
+                <svg
+                  className={`w-5 h-5 transition-transform ${openColumn === column.id ? "rotate-180" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </div>
+            </button>
+            {openColumn === column.id && (
+              <div className="p-3">
+                <DragDropContext onDragEnd={handleDragEnd}>
+                  <Droppable droppableId={column.id}>
+                    {(provided) => (
+                      <div ref={provided.innerRef} {...provided.droppableProps}>
+                        {boardTasks[column.id].map((task, index) => (
+                          <Draggable
+                            key={task.id}
+                            draggableId={String(task.id)}
+                            index={index}
+                            isDragDisabled={editingTask === task.id}
+                          >
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                className={`mb-3 ${snapshot.isDragging ? "dragging" : ""}`}
+                                style={provided.draggableProps.style}
+                              >
+                                <TaskCard task={task} />
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+                </DragDropContext>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
+    );
+  }
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={(event) => setActiveId(event.active.id)}
-        onDragEnd={handleDragEnd}
-      >
+  // Desktop view
+  return (
+    <div>
+      <div className="mb-6 flex justify-end">
+        <button
+          onClick={() => setShowArchived(!showArchived)}
+          className={`px-4 py-2 rounded-lg transition flex items-center gap-2 ${showArchived ? "bg-purple-500 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
+        >
+          📦 Kho lưu trữ ({archivedTasks.length})
+          <svg
+            className={`w-4 h-4 transition-transform ${showArchived ? "rotate-180" : ""}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        </button>
+      </div>
+      <DragDropContext onDragEnd={handleDragEnd}>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {columns.map((column) => (
-            <div key={column.id}>
-              <ColumnContent columnId={column.id} tasks={boardTasks[column.id]} />
+            <div
+              key={column.id}
+              className={`${column.color} rounded-xl p-4 flex flex-col max-h-[calc(100vh-12rem)]`}
+            >
+              <div
+                className={`${column.headerColor} text-white p-3 rounded-lg mb-4 flex justify-between items-center flex-shrink-0`}
+              >
+                <h3 className="font-semibold">
+                  {column.icon} {column.title}
+                </h3>
+                <span className="bg-white/20 px-2 py-0.5 rounded-full text-sm">
+                  {boardTasks[column.id].length}
+                </span>
+              </div>
+              <Droppable droppableId={column.id}>
+                {(provided, snapshot) => (
+                  <div
+                    ref={provided.innerRef}
+                    {...provided.droppableProps}
+                    className={`flex-1 overflow-y-auto transition-colors rounded-lg p-2 ${snapshot.isDraggingOver ? "bg-white/50" : ""}`}
+                    style={{ maxHeight: "calc(100vh - 250px)" }}
+                  >
+                    {boardTasks[column.id].map((task, index) => (
+                      <Draggable
+                        key={task.id}
+                        draggableId={task.id}
+                        index={index}
+                        isDragDisabled={editingTask === task.id}
+                      >
+                        {(provided) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.draggableProps}
+                            {...provided.dragHandleProps}
+                            className="mb-3 draggable-item"
+                          >
+                            <TaskCard task={task} />
+                          </div>
+                        )}
+                      </Draggable>
+                    ))}
+                    {provided.placeholder}
+                  </div>
+                )}
+              </Droppable>
             </div>
           ))}
         </div>
-        <DragOverlay>
-          {activeId ? (
-            <div className="bg-white rounded-lg shadow-lg p-3 opacity-90 draggable-item">
-              {activeId &&
-                (() => {
-                  let task = null;
-                  for (const col of ["todo", "doing", "done"]) {
-                    const found = boardTasks[col].find((t) => String(t.id) === activeId);
-                    if (found) {
-                      task = found;
-                      break;
-                    }
-                  }
-                  if (task) {
-                    return (
-                      <div>
-                        <h4 className="font-semibold text-gray-800 text-sm">
-                          {task.title}
-                        </h4>
-                        <p className="text-xs text-gray-500">
-                          {task.description || "📝 Không có mô tả"}
-                        </p>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
-
+      </DragDropContext>
       {showArchived && archivedTasks.length > 0 && (
         <div className="mt-8">
           <div className="bg-purple-50 rounded-xl p-4">
@@ -612,7 +619,10 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {archivedTasks.map((task) => (
-                <div key={task.id} className="bg-white rounded-lg shadow-sm p-3">
+                <div
+                  key={task.id}
+                  className="bg-white rounded-lg shadow-sm p-3"
+                >
                   <h4 className="font-semibold text-gray-800 mb-1">
                     {task.title}
                   </h4>
@@ -634,7 +644,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
           </div>
         </div>
       )}
-
       <EditTaskModal
         task={selectedTask}
         token={token}
@@ -659,6 +668,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
         />
       )}
 
+      {/* ✅ MOOD PICKER MODAL */}
       {showMoodPicker && (
         <MoodPicker
           taskId={completedTaskId}
