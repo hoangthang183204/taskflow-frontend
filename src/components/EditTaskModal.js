@@ -9,7 +9,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("medium");
-  const [status, setStatus] = useState("todo"); // ✅ THÊM STATE CHO STATUS
+  const [status, setStatus] = useState("todo");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -18,7 +18,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
       setDescription(task.description || "");
       setDueDate(task.dueDate ? task.dueDate.split("T")[0] : "");
       setPriority(task.priority || "medium");
-      setStatus(task.status || "todo"); // ✅ SET STATUS
+      setStatus(task.status || "todo");
     }
   }, [task, open]);
 
@@ -45,7 +45,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
           description: description.trim(),
           dueDate: dueDate || null,
           priority: priority,
-          status: status, // ✅ GỬI STATUS LÊN SERVER
+          status: status,
         },
         token,
       );
@@ -62,10 +62,10 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div className="p-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Chỉnh sửa task</h2>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-auto overflow-y-auto max-h-[90vh]">
+        <div className="p-4 sm:p-6">
+          <h2 className="text-lg sm:text-xl font-bold text-gray-800 mb-4">Chỉnh sửa task</h2>
           
           <div className="space-y-4">
             <div>
@@ -76,7 +76,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg p-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Nhập tiêu đề task"
                 autoFocus
               />
@@ -89,13 +89,13 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg p-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                 rows="3"
                 placeholder="Nhập mô tả task"
               />
             </div>
             
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Hạn chót
@@ -105,7 +105,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
                   min={getTodayDate()}
-                  className="w-full border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div className="flex-1">
@@ -115,7 +115,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="low">🟢 Thấp</option>
                   <option value="medium">🟡 Trung bình</option>
@@ -124,7 +124,6 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
               </div>
             </div>
 
-            {/* ✅ THÊM SELECT TRẠNG THÁI */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Trạng thái
@@ -132,7 +131,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg p-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="todo">📋 To Do</option>
                 <option value="doing">🔄 Doing</option>
@@ -144,17 +143,17 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
             </div>
           </div>
           
-          <div className="flex justify-end gap-3 mt-6">
+          <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition order-2 sm:order-1"
             >
               Hủy
             </button>
             <button
               onClick={handleSave}
               disabled={loading}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:opacity-50"
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:opacity-50 order-1 sm:order-2"
             >
               {loading ? "Đang lưu..." : "Lưu thay đổi"}
             </button>
