@@ -1,7 +1,6 @@
 // components/KanbanBoard.js
 "use client";
 import { useState, useEffect } from "react";
-// import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import {
   updateTask,
@@ -13,7 +12,7 @@ import {
 import { toast } from "sonner";
 import EditTaskModal from "./EditTaskModal";
 import PomodoroTimer from "./PomodoroTimer";
-import MoodPicker from "./MoodPicker"; // ✅ THÊM IMPORT
+import MoodPicker from "./MoodPicker";
 
 const columns = [
   {
@@ -58,8 +57,8 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [openColumn, setOpenColumn] = useState(null);
   const [timerTask, setTimerTask] = useState(null);
-  const [showMoodPicker, setShowMoodPicker] = useState(false); // ✅ THÊM STATE
-  const [completedTaskId, setCompletedTaskId] = useState(null); // ✅ THÊM STATE
+  const [showMoodPicker, setShowMoodPicker] = useState(false);
+  const [completedTaskId, setCompletedTaskId] = useState(null);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -167,7 +166,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
           dueDate: editDueDate || null,
           priority: editPriority,
         },
-        token,
+        token
       );
       toast.success("Cập nhật thành công");
       setEditingTask(null);
@@ -232,8 +231,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
 
   const handleDragEnd = async (result) => {
     console.log("🔍 DRAG ENDED:", result);
-    console.log("source:", result.source);
-    console.log("destination:", result.destination);
     const { source, destination, draggableId } = result;
     if (!destination) return;
     if (
@@ -260,10 +257,9 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
       try {
         await updateTask(taskId, { status: destColumn }, token);
         toast.success(
-          `Đã chuyển task sang ${columns.find((c) => c.id === destColumn)?.title}`,
+          `Đã chuyển task sang ${columns.find((c) => c.id === destColumn)?.title}`
         );
 
-        // ✅ NẾU CHUYỂN SANG "DONE", HIỂN THỊ MOODPICKER
         if (destColumn === "done") {
           setCompletedTaskId(taskId);
           setShowMoodPicker(true);
@@ -507,7 +503,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
                             key={task.id}
                             draggableId={String(task.id)}
                             index={index}
-                            isDragDisabled={editingTask === task.id}
                           >
                             {(provided, snapshot) => (
                               <div
@@ -587,9 +582,8 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
                     {boardTasks[column.id].map((task, index) => (
                       <Draggable
                         key={task.id}
-                        draggableId={task.id}
+                        draggableId={String(task.id)}
                         index={index}
-                        isDragDisabled={editingTask === task.id}
                       >
                         {(provided) => (
                           <div
@@ -668,7 +662,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
         />
       )}
 
-      {/* ✅ MOOD PICKER MODAL */}
       {showMoodPicker && (
         <MoodPicker
           taskId={completedTaskId}
