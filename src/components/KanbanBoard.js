@@ -84,7 +84,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   );
 
   useEffect(() => {
@@ -197,7 +197,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
           dueDate: editDueDate || null,
           priority: editPriority,
         },
-        token
+        token,
       );
       toast.success("Cập nhật thành công");
       setEditingTask(null);
@@ -319,7 +319,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
       try {
         await updateTask(draggedTask.id, { status: destColumn }, token);
         toast.success(
-          `Đã chuyển task sang ${columns.find((c) => c.id === destColumn)?.title}`
+          `Đã chuyển task sang ${columns.find((c) => c.id === destColumn)?.title}`,
         );
 
         if (destColumn === "done") {
@@ -442,7 +442,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
           <div className="flex border-t border-gray-100">
             {task.status !== "done" && (
               <button
-                onClick={() => openEditModal(task)}
+                onClick={() => openEditModal(task)} // Dùng openEditModal thay vì startEditing
                 className="flex-1 py-2 text-yellow-600 hover:bg-yellow-50 text-sm flex items-center justify-center gap-1"
               >
                 ✏️ Sửa
@@ -558,9 +558,14 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
         {showArchived && archivedTasks.length > 0 && (
           <div className="bg-purple-50 rounded-xl p-3">
             {archivedTasks.map((task) => (
-              <div key={task.id} className="bg-white rounded-lg shadow-sm p-3 mb-2">
+              <div
+                key={task.id}
+                className="bg-white rounded-lg shadow-sm p-3 mb-2"
+              >
                 <h4 className="font-semibold text-gray-800">{task.title}</h4>
-                <p className="text-xs text-gray-500">{task.description || "📝 Không có mô tả"}</p>
+                <p className="text-xs text-gray-500">
+                  {task.description || "📝 Không có mô tả"}
+                </p>
                 <div className="flex justify-between items-center mt-2">
                   {getPriorityBadge(task.priority)}
                   <button
@@ -583,7 +588,9 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
           >
             {/* Nút bấm để đóng/mở cột */}
             <button
-              onClick={() => setOpenColumn(openColumn === column.id ? null : column.id)}
+              onClick={() =>
+                setOpenColumn(openColumn === column.id ? null : column.id)
+              }
               className={`w-full ${column.headerColor} text-white p-4 flex justify-between items-center`}
             >
               <span>
@@ -664,7 +671,10 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {columns.map((column) => (
             <div key={column.id}>
-              <ColumnContent columnId={column.id} tasks={boardTasks[column.id]} />
+              <ColumnContent
+                columnId={column.id}
+                tasks={boardTasks[column.id]}
+              />
             </div>
           ))}
         </div>
@@ -675,7 +685,9 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
                 (() => {
                   let task = null;
                   for (const col of ["todo", "doing", "done"]) {
-                    const found = boardTasks[col].find((t) => String(t.id) === activeId);
+                    const found = boardTasks[col].find(
+                      (t) => String(t.id) === activeId,
+                    );
                     if (found) {
                       task = found;
                       break;
@@ -708,7 +720,10 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {archivedTasks.map((task) => (
-                <div key={task.id} className="bg-white rounded-lg shadow-sm p-3">
+                <div
+                  key={task.id}
+                  className="bg-white rounded-lg shadow-sm p-3"
+                >
                   <h4 className="font-semibold text-gray-800 mb-1">
                     {task.title}
                   </h4>
