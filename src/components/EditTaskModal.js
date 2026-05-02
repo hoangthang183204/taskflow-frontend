@@ -9,6 +9,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("medium");
+  const [status, setStatus] = useState("todo"); // ✅ THÊM STATE CHO STATUS
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -17,6 +18,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
       setDescription(task.description || "");
       setDueDate(task.dueDate ? task.dueDate.split("T")[0] : "");
       setPriority(task.priority || "medium");
+      setStatus(task.status || "todo"); // ✅ SET STATUS
     }
   }, [task, open]);
 
@@ -43,6 +45,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
           description: description.trim(),
           dueDate: dueDate || null,
           priority: priority,
+          status: status, // ✅ GỬI STATUS LÊN SERVER
         },
         token,
       );
@@ -50,7 +53,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
       onSuccess?.();
       onClose();
     } catch (error) {
-      toast.error("Không thể cập nhật task");
+      toast.error(error.message || "Không thể cập nhật task");
     } finally {
       setLoading(false);
     }
@@ -119,6 +122,25 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
                   <option value="high">🔴 Cao</option>
                 </select>
               </div>
+            </div>
+
+            {/* ✅ THÊM SELECT TRẠNG THÁI */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Trạng thái
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="todo">📋 To Do</option>
+                <option value="doing">🔄 Doing</option>
+                <option value="done">✅ Done</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Thay đổi trạng thái sẽ di chuyển task đến cột tương ứng
+              </p>
             </div>
           </div>
           
