@@ -269,7 +269,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     const activeId = active.id;
     const overId = over.id;
 
-    // Tìm column chứa task đang kéo và column đích
     let sourceColumn = null;
     let destColumn = null;
     let sourceIndex = -1;
@@ -284,7 +283,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
       }
     }
 
-    // Kiểm tra overId là task hay column
     if (overId.startsWith("column-")) {
       destColumn = overId.replace("column-", "");
       destIndex = boardTasks[destColumn].length;
@@ -304,7 +302,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     const draggedTask = boardTasks[sourceColumn][sourceIndex];
     if (!draggedTask) return;
 
-    // Cập nhật UI ngay lập tức
     const newBoardTasks = { ...boardTasks };
     newBoardTasks[sourceColumn] = [...newBoardTasks[sourceColumn]];
     newBoardTasks[sourceColumn].splice(sourceIndex, 1);
@@ -317,7 +314,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     }
     setBoardTasks(newBoardTasks);
 
-    // Gọi API nếu chuyển column
     if (sourceColumn !== destColumn) {
       setLoading((prev) => ({ ...prev, [draggedTask.id]: true }));
       try {
@@ -334,7 +330,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
         onTaskUpdate?.();
       } catch (error) {
         toast.error("Không thể cập nhật trạng thái task");
-        // Rollback UI
         setBoardTasks(boardTasks);
       } finally {
         setLoading((prev) => ({ ...prev, [draggedTask.id]: false }));
@@ -534,7 +529,108 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     );
   };
 
-  // Desktop view
+  // Mobile view (accordion) - ĐÓNG/MỞ ĐƯỢC
+  if (isMobile) {
+    return (
+      <div className="space-y-4">
+        {/* Nút mở/đóng kho lưu trữ */}
+        <button
+          onClick={() => setShowArchived(!showArchived)}
+          className="w-full bg-purple-100 text-purple-700 p-3 rounded-lg flex justify-between items-center"
+        >
+          <span>📦 Kho lưu trữ ({archivedTasks.length})</span>
+          <svg
+            className={`w-5 h-5 transition-transform ${showArchived ? "rotate-180" : ""}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        </button>
+
+        {/* Nội dung kho lưu trữ - chỉ hiện khi mở */}
+        {showArchived && archivedTasks.length > 0 && (
+          <div className="bg-purple-50 rounded-xl p-3">
+            {archivedTasks.map((task) => (
+              <div key={task.id} className="bg-white rounded-lg shadow-sm p-3 mb-2">
+                <h4 className="font-semibold text-gray-800">{task.title}</h4>
+                <p className="text-xs text-gray-500">{task.description || "📝 Không có mô tả"}</p>
+                <div className="flex justify-between items-center mt-2">
+                  {getPriorityBadge(task.priority)}
+                  <button
+                    onClick={() => handleRestore(task.id)}
+                    className="text-sm text-green-600 hover:text-green-700"
+                  >
+                    🔄 Khôi phục
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Các cột To Do, Doing, Done */}
+        {columns.map((column) => (
+          <div
+            key={column.id}
+            className={`${column.color} rounded-xl overflow-hidden`}
+          >
+            {/* Nút bấm để đóng/mở cột */}
+            <button
+              onClick={() => setOpenColumn(openColumn === column.id ? null : column.id)}
+              className={`w-full ${column.headerColor} text-white p-4 flex justify-between items-center`}
+            >
+              <span>
+                <span className="text-xl">{column.icon}</span> {column.title}
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="bg-white/20 px-2 py-0.5 rounded-full text-sm">
+                  {boardTasks[column.id].length}
+                </span>
+                <svg
+                  className={`w-5 h-5 transition-transform ${openColumn === column.id ? "rotate-180" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </div>
+            </button>
+
+            {/* Nội dung cột - chỉ hiện khi đang mở */}
+            {openColumn === column.id && (
+              <div className="p-3">
+                <div className="space-y-2">
+                  {boardTasks[column.id].map((task) => (
+                    <TaskCardContent key={task.id} task={task} />
+                  ))}
+                  {boardTasks[column.id].length === 0 && (
+                    <div className="text-center text-gray-400 text-sm py-4">
+                      Không có task nào
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Desktop view (kéo thả bình thường)
   return (
     <div>
       <div className="mb-6 flex justify-end">

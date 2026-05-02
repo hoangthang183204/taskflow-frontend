@@ -54,41 +54,12 @@ body {
   opacity: 0;
 }
 
-/* Thêm vào cuối file - CSS cho Drag & Drop */
-
-/* Ngăn bôi đen text khi kéo thả */
-.dragging {
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
+/* Hiệu ứng chuyển động khi đóng mở */
+.accordion-content {
+  transition: all 0.3s ease-out;
 }
 
-/* Đảm bảo kéo thả hoạt động trong container */
-[data-rbd-draggable-context-id] {
-  user-select: none;
-}
-
-/* Con trỏ khi di chuột vào task có thể kéo */
-.draggable-item {
-  cursor: grab;
-  cursor: -moz-grab;
-  cursor: -webkit-grab;
-}
-
-.draggable-item:active {
-  cursor: grabbing;
-  cursor: -moz-grabbing;
-  cursor: -webkit-grabbing;
-}
-
-/* Style cho khi đang kéo */
-.draggable-item.dragging {
-  opacity: 0.8;
-  cursor: grabbing;
-}
-
-/* Đảm bảo các cột droppable có đủ chiều cao */
-.droppable-area {
-  min-height: 100px;
+/* Style cho nút bấm */
+.accordion-button {
+  transition: background-color 0.2s;
 }

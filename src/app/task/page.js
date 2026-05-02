@@ -7,7 +7,6 @@ import Link from "next/link";
 import { toast } from "sonner";
 import useAuthStore from "@/store/authStore";
 import SearchBar from "@/components/SearchBar";
-import KanbanBoard from "@/components/KanbanBoard";
 import DashboardStats from "@/components/DashboardStats";
 import TrashView from "@/components/TrashView";
 
@@ -17,7 +16,7 @@ export default function Dashboard() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
-  const [trashCount, setTrashCount] = useState(0); // ✅ THÊM STATE NÀY
+  const [trashCount, setTrashCount] = useState(0);
   const [pagination, setPagination] = useState({
     total: 0,
     page: 1,
@@ -77,7 +76,6 @@ export default function Dashboard() {
     }
   };
 
-  // ✅ THÊM HÀM LẤY SỐ LƯỢNG THÙNG RÁC
   const fetchTrashCount = async () => {
     if (!token) return;
     try {
@@ -88,7 +86,6 @@ export default function Dashboard() {
     }
   };
 
-  // ✅ HÀM CẬP NHẬT SAU KHI CÓ THAY ĐỔI
   const handleTaskUpdate = () => {
     fetchTasks(pagination.page);
     fetchTrashCount();
@@ -100,7 +97,7 @@ export default function Dashboard() {
         setPagination((prev) => ({ ...prev, page: 1 }));
       }
       fetchTasks(1);
-      fetchTrashCount(); // ✅ GỌI LẤY SỐ LƯỢNG THÙNG RÁC
+      fetchTrashCount();
       isFirstRender.current = false;
     }
   }, [token, searchParams.search, searchParams.status, searchParams.priority]);
@@ -117,7 +114,7 @@ export default function Dashboard() {
     try {
       await deleteTask(id, token);
       toast.success("Xoá task thành công");
-      handleTaskUpdate(); // ✅ DÙNG HÀM CẬP NHẬT
+      handleTaskUpdate();
     } catch (err) {
       toast.error(err.message || "Xoá thất bại");
     }
@@ -173,68 +170,70 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200">
-      {/* Header */}
+      {/* Header - ĐÃ SỬA LỖI LỆCH */}
       <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Logo bên trái */}
+            <div className="flex items-center gap-4">
               <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                 TaskFlow
               </h1>
-
-              {/* Tabs Navigation */}
-              <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-                <button
-                  onClick={() => {
-                    setShowTrash(false);
-                    setShowStats(false);
-                  }}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${
-                    !showTrash && !showStats
-                      ? "bg-white text-blue-600 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  📋 Tasks
-                </button>
-                <button
-                  onClick={() => {
-                    setShowStats(true);
-                    setShowTrash(false);
-                  }}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${
-                    showStats
-                      ? "bg-white text-purple-600 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  📊 Thống kê
-                </button>
-                <button
-                  onClick={() => {
-                    setShowTrash(true);
-                    setShowStats(false);
-                  }}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${
-                    showTrash
-                      ? "bg-white text-orange-600 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  🗑️ Thùng rác
-                  {trashCount > 0 && ( // ✅ SỬA: dùng trashCount thay vì pagination.total
-                    <span className="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">
-                      {trashCount}
-                    </span>
-                  )}
-                </button>
-              </div>
             </div>
 
+            {/* Tabs Navigation - ở giữa */}
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => {
+                  setShowTrash(false);
+                  setShowStats(false);
+                }}
+                className={`px-3 md:px-4 py-1.5 rounded-md text-xs md:text-sm font-medium transition ${
+                  !showTrash && !showStats
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                📋 Tasks
+              </button>
+              <button
+                onClick={() => {
+                  setShowStats(true);
+                  setShowTrash(false);
+                }}
+                className={`px-3 md:px-4 py-1.5 rounded-md text-xs md:text-sm font-medium transition ${
+                  showStats
+                    ? "bg-white text-purple-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                📊 Thống kê
+              </button>
+              <button
+                onClick={() => {
+                  setShowTrash(true);
+                  setShowStats(false);
+                }}
+                className={`px-3 md:px-4 py-1.5 rounded-md text-xs md:text-sm font-medium transition ${
+                  showTrash
+                    ? "bg-white text-orange-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                🗑️ Thùng rác
+                {trashCount > 0 && (
+                  <span className="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">
+                    {trashCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Nút và Avatar bên phải */}
             <div className="flex items-center gap-4">
               <button
                 onClick={() => router.push("/task/create")}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition shadow-sm flex items-center gap-1"
+                className="bg-blue-500 hover:bg-blue-600 text-white px-3 md:px-4 py-1.5 rounded-lg text-xs md:text-sm font-medium transition shadow-sm flex items-center gap-1"
               >
                 <svg
                   className="w-4 h-4"
@@ -249,7 +248,8 @@ export default function Dashboard() {
                     d="M12 4v16m8-8H4"
                   />
                 </svg>
-                Task mới
+                <span className="hidden sm:inline">Task mới</span>
+                <span className="sm:hidden">+</span>
               </button>
 
               <div className="relative group">
@@ -374,7 +374,6 @@ export default function Dashboard() {
             )}
           </div>
         ) : (
-          //<KanbanBoard tasks={tasks} token={token} onTaskUpdate={handleTaskUpdate} />
           <KanbanBoardWrapper
             tasks={tasks}
             token={token}
