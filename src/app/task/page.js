@@ -1,4 +1,5 @@
 "use client";
+import KanbanBoardWrapper from "@/components/KanbanBoardWrapper";
 import { useEffect, useState, useRef } from "react";
 import { getTasks, deleteTask, getTrashTasks } from "@/services/api";
 import { useRouter } from "next/navigation";
@@ -167,7 +168,8 @@ export default function Dashboard() {
   }
 
   const totalPages = Math.ceil(pagination.total / pagination.limit);
-  const hasActiveFilters = searchParams.search || searchParams.status || searchParams.priority;
+  const hasActiveFilters =
+    searchParams.search || searchParams.status || searchParams.priority;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200">
@@ -179,7 +181,7 @@ export default function Dashboard() {
               <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                 TaskFlow
               </h1>
-              
+
               {/* Tabs Navigation */}
               <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
                 <button
@@ -234,8 +236,18 @@ export default function Dashboard() {
                 onClick={() => router.push("/task/create")}
                 className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition shadow-sm flex items-center gap-1"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
                 </svg>
                 Task mới
               </button>
@@ -245,21 +257,59 @@ export default function Dashboard() {
                   <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-semibold shadow-md">
                     {getAvatarInitial()}
                   </div>
-                  <span className="hidden md:block text-sm text-gray-700">{user?.name?.split(" ")[0]}</span>
-                  <svg className="w-3 h-3 text-gray-500 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  <span className="hidden md:block text-sm text-gray-700">
+                    {user?.name?.split(" ")[0]}
+                  </span>
+                  <svg
+                    className="w-3 h-3 text-gray-500 hidden md:block"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
                   </svg>
                 </button>
                 <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20">
-                  <Link href="/profile" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  <Link
+                    href="/profile"
+                    className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                      />
                     </svg>
                     Tài khoản
                   </Link>
-                  <button onClick={handleLogout} className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                      />
                     </svg>
                     Đăng xuất
                   </button>
@@ -290,34 +340,66 @@ export default function Dashboard() {
         ) : tasks.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl shadow-sm">
             <div className="w-24 h-24 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
-              <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              <svg
+                className="w-12 h-12 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1}
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                />
               </svg>
             </div>
             <p className="text-gray-500 text-lg">
-              {hasActiveFilters ? "🔍 Không tìm thấy task nào" : "✨ Chưa có task nào"}
+              {hasActiveFilters
+                ? "🔍 Không tìm thấy task nào"
+                : "✨ Chưa có task nào"}
             </p>
             <p className="text-gray-400 text-sm mt-1">
-              {hasActiveFilters ? "Hãy thử bộ lọc khác" : "Bắt đầu bằng cách tạo task đầu tiên"}
+              {hasActiveFilters
+                ? "Hãy thử bộ lọc khác"
+                : "Bắt đầu bằng cách tạo task đầu tiên"}
             </p>
             {!hasActiveFilters && (
-              <button onClick={() => router.push("/task/create")} className="mt-4 bg-blue-500 hover:bg-blue-600 text-white px-5 py-2 rounded-lg text-sm transition">
+              <button
+                onClick={() => router.push("/task/create")}
+                className="mt-4 bg-blue-500 hover:bg-blue-600 text-white px-5 py-2 rounded-lg text-sm transition"
+              >
                 + Tạo task ngay
               </button>
             )}
           </div>
         ) : (
-          <KanbanBoard tasks={tasks} token={token} onTaskUpdate={handleTaskUpdate} />
+          //<KanbanBoard tasks={tasks} token={token} onTaskUpdate={handleTaskUpdate} />
+          <KanbanBoardWrapper
+            tasks={tasks}
+            token={token}
+            onTaskUpdate={handleTaskUpdate}
+          />
         )}
 
         {/* Pagination */}
         {totalPages > 1 && !showTrash && !showStats && (
           <div className="mt-6 flex justify-center gap-2">
-            <button onClick={goToPrevPage} disabled={pagination.page === 1} className="px-3 py-1.5 bg-gray-500 text-white rounded-lg disabled:opacity-50 hover:bg-gray-600 transition text-sm">
+            <button
+              onClick={goToPrevPage}
+              disabled={pagination.page === 1}
+              className="px-3 py-1.5 bg-gray-500 text-white rounded-lg disabled:opacity-50 hover:bg-gray-600 transition text-sm"
+            >
               ← Trước
             </button>
-            <span className="px-3 py-1.5 text-gray-700 text-sm">Trang {pagination.page} / {totalPages}</span>
-            <button onClick={goToNextPage} disabled={pagination.page >= totalPages} className="px-3 py-1.5 bg-gray-500 text-white rounded-lg disabled:opacity-50 hover:bg-gray-600 transition text-sm">
+            <span className="px-3 py-1.5 text-gray-700 text-sm">
+              Trang {pagination.page} / {totalPages}
+            </span>
+            <button
+              onClick={goToNextPage}
+              disabled={pagination.page >= totalPages}
+              className="px-3 py-1.5 bg-gray-500 text-white rounded-lg disabled:opacity-50 hover:bg-gray-600 transition text-sm"
+            >
               Sau →
             </button>
           </div>
