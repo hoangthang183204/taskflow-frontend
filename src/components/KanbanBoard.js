@@ -592,7 +592,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
                             ref={provided.innerRef}
                             {...provided.draggableProps}
                             {...provided.dragHandleProps}
-                            className="mb-3"
+                            className="mb-3 draggable-item"
                           >
                             <TaskCard task={task} />
                           </div>
