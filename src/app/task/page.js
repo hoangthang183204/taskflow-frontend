@@ -27,6 +27,8 @@ export default function Dashboard() {
     status: "",
     priority: "",
   });
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [isHover, setIsHover] = useState(false);
   const router = useRouter();
   const isFirstRender = useRef(true);
 
@@ -170,10 +172,10 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200">
-      {/* Header - ĐÃ SỬA LỖI LỆCH */}
+      {/* Header - Responsive với dropdown click được trên mobile */}
       <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          {/* Hàng 1: Logo + Nút Task mới + Avatar - hiển thị trên mọi thiết bị */}
+          {/* Hàng 1: Logo + Nút Task mới + Avatar */}
           <div className="flex items-center justify-between mb-3">
             {/* Logo bên trái */}
             <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
@@ -202,8 +204,12 @@ export default function Dashboard() {
                 <span className="hidden sm:inline">Task mới</span>
               </button>
 
-              <div className="relative group">
-                <button className="flex items-center gap-2 focus:outline-none">
+              {/* Avatar Dropdown - Click được trên mobile */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center gap-2 focus:outline-none"
+                >
                   <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-semibold shadow-md">
                     {getAvatarInitial()}
                   </div>
@@ -211,7 +217,7 @@ export default function Dashboard() {
                     {user?.name?.split(" ")[0]}
                   </span>
                   <svg
-                    className="w-3 h-3 text-gray-500 hidden md:block"
+                    className={`w-3 h-3 text-gray-500 hidden md:block transition-transform ${showUserMenu ? "rotate-180" : ""}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -224,51 +230,46 @@ export default function Dashboard() {
                     />
                   </svg>
                 </button>
-                <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20">
-                  <Link
-                    href="/profile"
-                    className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                
+                {/* Dropdown menu */}
+                {(showUserMenu || isHover) && (
+                  <div 
+                    className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg overflow-hidden z-20"
+                    onMouseEnter={() => setIsHover(true)}
+                    onMouseLeave={() => setIsHover(false)}
                   >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                    <Link
+                      href="/profile"
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      onClick={() => setShowUserMenu(false)}
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                      />
-                    </svg>
-                    Tài khoản
-                  </Link>
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      Tài khoản
+                    </Link>
+                    <button
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        if (window.confirm("Bạn có chắc muốn đăng xuất?")) {
+                          logout();
+                          router.push("/");
+                        }
+                      }}
+                      className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                      />
-                    </svg>
-                    Đăng xuất
-                  </button>
-                </div>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      Đăng xuất
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Hàng 2: Tabs Navigation - 3 nút ngang hàng */}
+          {/* Hàng 2: Tabs Navigation */}
           <div className="flex justify-center">
             <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-full sm:w-auto">
               <button
