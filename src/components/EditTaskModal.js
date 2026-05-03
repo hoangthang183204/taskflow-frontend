@@ -62,8 +62,19 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
-      <div className="bg-white rounded-lg shadow-xl w-[calc(100%-2rem)] max-w-md mx-auto overflow-y-auto max-h-[85vh] relative" style={{ width: 'calc(100% - 2rem)' }}>
+    <div 
+      className="fixed inset-0 flex items-center justify-center p-4" 
+      style={{ 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        right: 0, 
+        bottom: 0, 
+        zIndex: 99999,
+        backgroundColor: 'rgba(0,0,0,0.5)'
+      }}
+    >
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-auto overflow-y-auto" style={{ maxHeight: '85vh', width: 'calc(100% - 2rem)' }}>
         <div className="p-4 sm:p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg sm:text-xl font-bold text-gray-800">Chỉnh sửa task</h2>
