@@ -1,6 +1,7 @@
 // components/EditTaskModal.js
 "use client";
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { updateTask } from "@/services/api";
 import { toast } from "sonner";
 
@@ -11,6 +12,12 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
   const [priority, setPriority] = useState("medium");
   const [status, setStatus] = useState("todo");
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
 
   useEffect(() => {
     if (task && open) {
@@ -59,9 +66,9 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
     }
   };
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div 
       className="fixed inset-0 flex items-center justify-center p-4" 
       style={{ 
@@ -73,8 +80,13 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
         zIndex: 99999,
         backgroundColor: 'rgba(0,0,0,0.5)'
       }}
+      onClick={onClose}
     >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-auto overflow-y-auto" style={{ maxHeight: '85vh', width: 'calc(100% - 2rem)' }}>
+      <div 
+        className="bg-white rounded-lg shadow-xl w-full max-w-md mx-auto overflow-y-auto"
+        style={{ maxHeight: '85vh', width: 'calc(100% - 2rem)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="p-4 sm:p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg sm:text-xl font-bold text-gray-800">Chỉnh sửa task</h2>
@@ -181,6 +193,7 @@ export default function EditTaskModal({ task, token, open, onClose, onSuccess })
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
