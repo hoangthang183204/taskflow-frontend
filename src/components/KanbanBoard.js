@@ -442,7 +442,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
           <div className="flex border-t border-gray-100">
             {task.status !== "done" && (
               <button
-                onClick={() => openEditModal(task)} // Dùng openEditModal thay vì startEditing
+                onClick={() => openEditModal(task)}
                 className="flex-1 py-2 text-yellow-600 hover:bg-yellow-50 text-sm flex items-center justify-center gap-1"
               >
                 ✏️ Sửa
