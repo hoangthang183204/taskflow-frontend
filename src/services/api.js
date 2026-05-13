@@ -1,12 +1,27 @@
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
 
 const fetchAPI = async (endpoint, options = {}) => {
-  
+  // Tự động lấy token
+  const getToken = () => {
+    let token = localStorage.getItem("token");
+    if (!token) {
+      const cookies = document.cookie.split("; ");
+      const tokenCookie = cookies.find((row) => row.startsWith("token="));
+      if (tokenCookie) {
+        token = tokenCookie.split("=")[1];
+        localStorage.setItem("token", token);
+      }
+    }
+    return token;
+  };
+
+  const token = getToken();
+
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...(token && { Authorization: `Bearer ${token}` }), // Tự động thêm token
       ...options.headers,
     },
   });
@@ -167,13 +182,11 @@ export const deleteAccount = async (token) => {
   return result;
 };
 
-
 // ==================== BOARD APIs ====================
 export const getMyBoards = async (token) => {
   const result = await fetchAPI("/api/board", {
     headers: { Authorization: `Bearer ${token}` },
   });
-  
 
   if (result?.data && Array.isArray(result.data)) {
     return result.data;
