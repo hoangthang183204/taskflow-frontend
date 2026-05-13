@@ -1,7 +1,8 @@
-// services/api.js
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
 
 const fetchAPI = async (endpoint, options = {}) => {
+  
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers: {
@@ -62,12 +63,24 @@ export const changePassword = async (token, passwordData) => {
 };
 
 // ==================== TASK APIs ====================
+
 export const getTasks = async (token, params = {}) => {
-  const queryString = new URLSearchParams(params).toString();
+  const cleanParams = {};
+  if (params.page) cleanParams.page = params.page;
+  if (params.limit) cleanParams.limit = params.limit;
+  if (params.search) cleanParams.search = params.search;
+  if (params.status) cleanParams.status = params.status;
+  if (params.priority) cleanParams.priority = params.priority;
+  if (params.boardId) cleanParams.boardId = params.boardId;
+  if (params.teamId) cleanParams.teamId = params.teamId;
+
+  const queryString = new URLSearchParams(cleanParams).toString();
   const endpoint = `/api/task${queryString ? `?${queryString}` : ""}`;
+
   const result = await fetchAPI(endpoint, {
     headers: { Authorization: `Bearer ${token}` },
   });
+
   return result;
 };
 
@@ -97,7 +110,6 @@ export const deleteTask = async (id, token) => {
   return result;
 };
 
-// ✅ SỬA: đổi tên từ archivetasks thành archiveTask (cho đúng với component)
 export const archiveTask = async (id, token) => {
   const result = await fetchAPI(`/api/task/${id}/archive`, {
     method: "PUT",
@@ -106,7 +118,6 @@ export const archiveTask = async (id, token) => {
   return result;
 };
 
-// ✅ SỬA: đổi tên từ restoreFromArchive (giữ nguyên)
 export const restoreFromArchive = async (id, token) => {
   const result = await fetchAPI(`/api/task/${id}/restore`, {
     method: "PUT",
@@ -115,7 +126,6 @@ export const restoreFromArchive = async (id, token) => {
   return result;
 };
 
-// ✅ SỬA: đổi tên từ softDeletetasks thành softDeleteTask
 export const softDeleteTask = async (id, token) => {
   const result = await fetchAPI(`/api/task/${id}/soft`, {
     method: "DELETE",
@@ -124,7 +134,6 @@ export const softDeleteTask = async (id, token) => {
   return result;
 };
 
-// ✅ SỬA: đổi tên từ hardDeletetasks thành hardDeleteTask
 export const hardDeleteTask = async (id, token) => {
   const result = await fetchAPI(`/api/task/${id}/hard`, {
     method: "DELETE",
@@ -133,7 +142,6 @@ export const hardDeleteTask = async (id, token) => {
   return result;
 };
 
-// ✅ SỬA: đổi tên từ restoreFromTrash (giữ nguyên)
 export const restoreFromTrash = async (id, token) => {
   const result = await fetchAPI(`/api/task/${id}/restore`, {
     method: "PUT",
@@ -142,7 +150,6 @@ export const restoreFromTrash = async (id, token) => {
   return result;
 };
 
-// ✅ SỬA: đổi tên từ getTrashtaskss thành getTrashTasks
 export const getTrashTasks = async (token, params = {}) => {
   const queryString = new URLSearchParams(params).toString();
   const endpoint = `/api/task/trash${queryString ? `?${queryString}` : ""}`;
@@ -155,9 +162,60 @@ export const getTrashTasks = async (token, params = {}) => {
 export const deleteAccount = async (token) => {
   const result = await fetchAPI("/api/auth/delete", {
     method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return result;
+};
+
+
+// ==================== BOARD APIs ====================
+export const getMyBoards = async (token) => {
+  const result = await fetchAPI("/api/board", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  
+
+  if (result?.data && Array.isArray(result.data)) {
+    return result.data;
+  }
+  if (Array.isArray(result)) {
+    return result;
+  }
+  if (result?.boards && Array.isArray(result.boards)) {
+    return result.boards;
+  }
+  return [];
+};
+
+export const createBoard = async (token, boardData) => {
+  const result = await fetchAPI("/api/board", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(boardData),
+  });
+  return result.data || result;
+};
+
+export const getBoardDetail = async (token, boardId) => {
+  const result = await fetchAPI(`/api/board/${boardId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return result.data || result;
+};
+
+export const updateBoard = async (token, boardId, boardData) => {
+  const result = await fetchAPI(`/api/board/${boardId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(boardData),
+  });
+  return result.data || result;
+};
+
+export const deleteBoard = async (token, boardId) => {
+  const result = await fetchAPI(`/api/board/${boardId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
   });
   return result;
 };

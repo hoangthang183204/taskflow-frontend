@@ -54,12 +54,83 @@ body {
   opacity: 0;
 }
 
-/* Hiệu ứng chuyển động khi đóng mở */
 .accordion-content {
   transition: all 0.3s ease-out;
 }
 
-/* Style cho nút bấm */
 .accordion-button {
   transition: background-color 0.2s;
+}
+
+.sortable-task-card {
+  touch-action: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sortable-task-card:active {
+  cursor: grabbing;
+}
+
+@media (max-width: 768px) {
+  .sortable-task-card {
+    touch-action: pan-y pinch-zoom; /* Cho phép cuộn dọc nhưng vẫn kéo được */
+  }
+  
+  /* Tăng kích thước vùng bắt sự kiện kéo */
+  [data-dnd-kit-sortable-handle] {
+    touch-action: manipulation;
+  }
+}
+
+/* globals.css */
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Ngăn scroll khi kéo thả dnd-kit */
+body:has(.dragging) {
+  overflow: hidden !important;
+  position: fixed !important;
+  width: 100% !important;
+  height: 100% !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+}
+
+/* Đảm bảo modal vẫn hoạt động */
+body:has(.dragging) .fixed {
+  position: fixed !important;
+}
+
+/* Khôi phục khi kết thúc */
+body:has(.dragging) .kanban-board {
+  pointer-events: none;
+}
+
+/* Fix scroll khi kéo thả */
+.overflow-y-auto {
+  scroll-behavior: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ngăn scroll body khi kéo */
+body.dragging-active {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+  height: 100%;
 }

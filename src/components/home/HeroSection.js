@@ -13,7 +13,7 @@ export default function HeroSection() {
 
   const handleGetStarted = () => {
     if (isLoggedIn) {
-      router.push("/task");
+      router.push("/board");  // ✅ SỬA: /task -> /board
     } else {
       router.push("/login");
     }
@@ -37,7 +37,7 @@ export default function HeroSection() {
             onClick={handleGetStarted}
             className="bg-blue-600 text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-blue-700 transition shadow-lg transform hover:scale-105"
           >
-            {isLoggedIn ? "Đến Dashboard" : "Bắt đầu ngay"}
+            {isLoggedIn ? "Đến Boards" : "Bắt đầu ngay"}  {/* ✅ SỬA: Dashboard -> Boards */}
           </button>
           <a
             href="#features"

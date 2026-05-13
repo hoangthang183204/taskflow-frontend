@@ -40,7 +40,7 @@ export default function Login() {
       toast.success(`Chào mừng ${data.user?.name} quay trở lại! 🎉`);
 
       setTimeout(() => {
-        router.push("/task");
+        router.push("/board");
       }, 500);
     } catch (error) {
       console.error("Login error:", error);

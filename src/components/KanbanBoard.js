@@ -1,17 +1,18 @@
-// components/KanbanBoard.js
 "use client";
 import { useState, useEffect } from "react";
+import useAuthStore from "@/store/authStore";
 import {
   DndContext,
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragOverlay,
+  useDroppable,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
@@ -32,28 +33,28 @@ import SortableTaskCard from "./SortableTaskCard";
 const columns = [
   {
     id: "todo",
-    title: "📋 To Do",
+    title: "To Do",
     color: "bg-gray-100",
     headerColor: "bg-gray-500",
-    icon: "",
   },
   {
     id: "doing",
-    title: "🔄 Doing",
+    title: "Doing",
     color: "bg-yellow-50",
     headerColor: "bg-yellow-500",
-    icon: "",
   },
   {
     id: "done",
-    title: "✅ Done",
+    title: "Done",
     color: "bg-green-50",
     headerColor: "bg-green-500",
-    icon: "",
   },
 ];
 
-export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
+export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
+  const { user } = useAuthStore();
+  const currentUserId = user?.id;
+
   const [boardTasks, setBoardTasks] = useState({
     todo: [],
     doing: [],
@@ -75,11 +76,26 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
   const [showMoodPicker, setShowMoodPicker] = useState(false);
   const [completedTaskId, setCompletedTaskId] = useState(null);
   const [activeId, setActiveId] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOverColumnId, setDragOverColumnId] = useState(null);
+
+  // State cho gán task
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [selectedTaskForAssign, setSelectedTaskForAssign] = useState(null);
+  const [boardMembers, setBoardMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [assigning, setAssigning] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
         distance: 5,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -108,6 +124,50 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     });
     setArchivedTasks(archived);
   }, [tasks]);
+
+  // Lấy danh sách thành viên trong board để gán task
+  useEffect(() => {
+    if (board?.id && token) {
+      fetchBoardMembers();
+    }
+  }, [board?.id, token]);
+
+  const fetchBoardMembers = async () => {
+    if (!board?.id) return;
+    try {
+      setLoadingMembers(true);
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337"}/api/board/${board.id}/members/assignable`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setBoardMembers(Array.isArray(data) ? data : []);
+      }
+    } catch (error) {
+      console.error("Lỗi fetch members:", error);
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
+  // Gán task cho thành viên
+  const handleAssignTask = async (taskId, userId, userName) => {
+    setAssigning(true);
+    try {
+      await updateTask(taskId, { assignedTo: userId, assignedByName: userName }, token);
+      toast.success("Đã gán task cho thành viên");
+      onTaskUpdate?.();
+      setShowAssignModal(false);
+      setSelectedTaskForAssign(null);
+    } catch (error) {
+      toast.error(error.message || "Không thể gán task");
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   const getTodayDate = () => {
     const now = new Date();
@@ -167,18 +227,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
 
   const openTimer = (task) => {
     setTimerTask(task);
-  };
-
-  const startEditing = (task) => {
-    if (task.status === "done") {
-      toast.info("Task đã hoàn thành, không thể sửa");
-      return;
-    }
-    setEditingTask(task.id);
-    setEditTitle(task.title);
-    setEditDesc(task.description || "");
-    setEditDueDate(task.dueDate ? task.dueDate.split("T")[0] : "");
-    setEditPriority(task.priority || "medium");
   };
 
   const saveEdit = async (taskId) => {
@@ -263,11 +311,13 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
   const handleDragEnd = async (event) => {
     const { active, over } = event;
     setActiveId(null);
+    setIsDragging(false);
+    setDragOverColumnId(null);
 
     if (!over) return;
 
-    const activeId = active.id;
-    const overId = over.id;
+    const activeId = String(active.id);
+    const overId = String(over.id);
 
     let sourceColumn = null;
     let destColumn = null;
@@ -303,15 +353,17 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     if (!draggedTask) return;
 
     const newBoardTasks = { ...boardTasks };
-    newBoardTasks[sourceColumn] = [...newBoardTasks[sourceColumn]];
-    newBoardTasks[sourceColumn].splice(sourceIndex, 1);
-    newBoardTasks[destColumn] = [...newBoardTasks[destColumn]];
+    const [removed] = newBoardTasks[sourceColumn].splice(sourceIndex, 1);
 
     if (sourceColumn === destColumn) {
-      newBoardTasks[destColumn].splice(destIndex, 0, draggedTask);
+      newBoardTasks[destColumn].splice(destIndex, 0, removed);
     } else {
-      newBoardTasks[destColumn].splice(destIndex, 0, draggedTask);
+      newBoardTasks[destColumn].splice(destIndex, 0, {
+        ...removed,
+        status: destColumn,
+      });
     }
+
     setBoardTasks(newBoardTasks);
 
     if (sourceColumn !== destColumn) {
@@ -321,6 +373,8 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
         toast.success(
           `Đã chuyển task sang ${columns.find((c) => c.id === destColumn)?.title}`,
         );
+
+        setOpenColumn(destColumn);
 
         if (destColumn === "done") {
           setCompletedTaskId(draggedTask.id);
@@ -340,9 +394,12 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
   const TaskCardContent = ({ task }) => {
     const isEditing = editingTask === task.id;
     const isTaskLoading = loading[task.id];
+    const isTodo = task.status === "todo";
+    const isDoing = task.status === "doing";
+    const isDone = task.status === "done";
 
     return (
-      <div className="bg-white rounded-lg shadow-sm mb-3">
+      <div className="bg-white rounded-lg shadow-sm mb-3 relative">
         {isTaskLoading && (
           <div className="absolute right-2 top-2">
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
@@ -412,24 +469,48 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
             <>
               <h4
                 className={`font-semibold text-gray-800 mb-1 text-sm line-clamp-2 ${
-                  task.status === "done" ? "line-through text-gray-400" : ""
+                  isDone ? "line-through text-gray-400" : ""
                 }`}
               >
                 {task.title}
               </h4>
               <p
                 className={`text-xs text-gray-500 mb-2 line-clamp-2 ${
-                  task.status === "done" ? "text-gray-400" : ""
+                  isDone ? "text-gray-400" : ""
                 }`}
               >
                 {task.description || "📝 Không có mô tả"}
               </p>
+
+              {/* Hiển thị người được gán */}
+              {task.assignedTo && (
+                <div className="flex flex-wrap items-center gap-1 mt-1">
+                  {task.assignedTo === currentUserId ? (
+                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
+                      📨 Giao cho tôi
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">
+                      👤 Giao cho: {task.assignedByName || "Thành viên"}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Badge người tạo */}
+              {task.userId === currentUserId && !task.assignedTo && (
+                <div className="flex flex-wrap items-center gap-1 mt-1">
+                  <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
+                    📝 Tôi tạo
+                  </span>
+                </div>
+              )}
             </>
           )}
           <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
             <div className="flex gap-2">{getPriorityBadge(task.priority)}</div>
             <div className="flex items-center gap-2">
-              {task.dueDate && task.status !== "done" && (
+              {task.dueDate && !isDone && (
                 <span className="text-xs text-gray-500">
                   📅 {new Date(task.dueDate).toLocaleDateString("vi-VN")}
                 </span>
@@ -439,8 +520,9 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
           </div>
         </div>
         {!isEditing && (
-          <div className="flex border-t border-gray-100">
-            {task.status !== "done" && (
+          <div className="flex border-t border-gray-100 flex-wrap">
+            {/* Nút Sửa - hiển thị cho task chưa hoàn thành */}
+            {!isDone && (
               <button
                 onClick={() => openEditModal(task)}
                 className="flex-1 py-2 text-yellow-600 hover:bg-yellow-50 text-sm flex items-center justify-center gap-1"
@@ -448,41 +530,49 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
                 ✏️ Sửa
               </button>
             )}
-            {!task.isArchived && (
+
+            {/* Nút Gán task - CHỈ hiển thị ở TODO */}
+            {isTodo && boardMembers.length > 0 && !isDone && (
+              <button
+                onClick={() => {
+                  setSelectedTaskForAssign(task);
+                  setShowAssignModal(true);
+                }}
+                className="flex-1 py-2 text-blue-600 hover:bg-blue-50 text-sm flex items-center justify-center gap-1 border-l border-gray-100"
+              >
+                👤 Gán
+              </button>
+            )}
+
+            {/* Nút Lưu trữ - CHỈ hiển thị ở DOING và DONE (bỏ ở TODO) */}
+            {!isTodo && !task.isArchived && (
               <button
                 onClick={() => handleArchive(task.id)}
                 className={`flex-1 py-2 text-purple-600 hover:bg-purple-50 text-sm flex items-center justify-center gap-1 ${
-                  task.status !== "done" ? "border-l border-gray-100" : ""
+                  !isDone ? "border-l border-gray-100" : ""
                 }`}
               >
                 📦 Lưu trữ
               </button>
             )}
-            <button
-              onClick={() => handleSoftDelete(task.id)}
-              className="flex-1 py-2 text-orange-600 hover:bg-orange-50 text-sm flex items-center justify-center gap-1 border-l border-gray-100"
-            >
-              🗑️ Xóa
-            </button>
-            {task.status !== "done" && (
+
+            {/* Nút Xóa - CHỈ hiển thị ở TODO và DONE (bỏ ở DOING) */}
+            {!isDoing && (
+              <button
+                onClick={() => handleSoftDelete(task.id)}
+                className="flex-1 py-2 text-orange-600 hover:bg-orange-50 text-sm flex items-center justify-center gap-1 border-l border-gray-100"
+              >
+                🗑️ Xóa
+              </button>
+            )}
+
+            {/* Nút Timer - CHỈ hiển thị ở DOING */}
+            {isDoing && !isDone && (
               <button
                 onClick={() => openTimer(task)}
-                className="flex-1 py-2 text-purple-600 hover:bg-purple-50 text-sm flex items-center justify-center gap-1"
+                className="flex-1 py-2 text-blue-600 hover:bg-blue-50 text-sm flex items-center justify-center gap-1 border-l border-gray-100"
               >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                Timer
+                ⏱️ Timer
               </button>
             )}
           </div>
@@ -491,25 +581,25 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
     );
   };
 
-  const SortableTaskCard = ({ task }) => {
-    return (
-      <div className="mb-3 draggable-item">
-        <TaskCardContent task={task} />
-      </div>
-    );
-  };
+  const DesktopColumnContent = ({ columnId, tasks }) => {
+    const { setNodeRef } = useDroppable({
+      id: `column-${columnId}`,
+    });
 
-  const ColumnContent = ({ columnId, tasks }) => {
+    const column = columns.find((c) => c.id === columnId);
+    const icon =
+      columnId === "todo" ? "📋" : columnId === "doing" ? "🔄" : "✅";
+
     return (
       <div
-        className={`${columns.find((c) => c.id === columnId)?.color} rounded-xl p-4 flex flex-col max-h-[calc(100vh-12rem)]`}
+        ref={setNodeRef}
+        className={`${column?.color} rounded-xl p-4 flex flex-col`}
       >
         <div
-          className={`${columns.find((c) => c.id === columnId)?.headerColor} text-white p-3 rounded-lg mb-4 flex justify-between items-center flex-shrink-0`}
+          className={`${column?.headerColor} text-white p-3 rounded-lg mb-4 flex justify-between items-center flex-shrink-0`}
         >
           <h3 className="font-semibold">
-            {columns.find((c) => c.id === columnId)?.icon}{" "}
-            {columns.find((c) => c.id === columnId)?.title}
+            {icon} {column?.title}
           </h3>
           <span className="bg-white/20 px-2 py-0.5 rounded-full text-sm">
             {tasks.length}
@@ -519,23 +609,53 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
           items={tasks.map((t) => String(t.id))}
           strategy={verticalListSortingStrategy}
         >
-          <div className="flex-1 overflow-y-auto rounded-lg p-2 space-y-2">
+          <div className="flex-1 rounded-lg p-2 space-y-2">
             {tasks.map((task) => (
-              <SortableTaskCard key={task.id} task={task} />
+              <SortableTaskCard key={task.id} task={task}>
+                <TaskCardContent task={task} />
+              </SortableTaskCard>
             ))}
+            {tasks.length === 0 && (
+              <div className="text-center text-gray-400 text-sm py-8 border-2 border-dashed border-gray-300 rounded-lg">
+                📌 Kéo task vào đây
+              </div>
+            )}
           </div>
         </SortableContext>
       </div>
     );
   };
 
-  // Mobile view (accordion) - ĐÓNG/MỞ ĐƯỢC
-  // Mobile view (accordion) - ĐÓNG/MỞ ĐƯỢC
+  // Mobile Droppable Column Component
+  const MobileDroppableColumn = ({ columnId, children }) => {
+    const { setNodeRef, isOver } = useDroppable({
+      id: `column-${columnId}`,
+    });
+
+    useEffect(() => {
+      if (isOver) {
+        setDragOverColumnId(columnId);
+      }
+    }, [isOver, columnId]);
+
+    return (
+      <div
+        ref={setNodeRef}
+        className={`transition-all duration-200 rounded-lg ${
+          isOver ? "bg-blue-100 ring-2 ring-blue-500" : ""
+        }`}
+        style={{ minHeight: "100px" }}
+      >
+        {children}
+      </div>
+    );
+  };
+
+  // Mobile View
   if (isMobile) {
     return (
       <>
-        <div className="space-y-4">
-          {/* Nút mở/đóng kho lưu trữ */}
+        <div className="space-y-4 pb-20">
           <button
             onClick={() => setShowArchived(!showArchived)}
             className="w-full bg-purple-100 text-purple-700 p-3 rounded-lg flex justify-between items-center"
@@ -556,7 +676,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
             </svg>
           </button>
 
-          {/* Nội dung kho lưu trữ - chỉ hiện khi mở */}
           {showArchived && archivedTasks.length > 0 && (
             <div className="bg-purple-50 rounded-xl p-3">
               {archivedTasks.map((task) => (
@@ -582,60 +701,139 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
             </div>
           )}
 
-          {/* Các cột To Do, Doing, Done */}
-          {columns.map((column) => (
-            <div
-              key={column.id}
-              className={`${column.color} rounded-xl overflow-hidden`}
-            >
-              <button
-                onClick={() =>
-                  setOpenColumn(openColumn === column.id ? null : column.id)
-                }
-                className={`w-full ${column.headerColor} text-white p-4 flex justify-between items-center`}
-              >
-                <span>
-                  <span className="text-xl">{column.icon}</span> {column.title}
-                </span>
-                <div className="flex items-center gap-3">
-                  <span className="bg-white/20 px-2 py-0.5 rounded-full text-sm">
-                    {boardTasks[column.id].length}
-                  </span>
-                  <svg
-                    className={`w-5 h-5 transition-transform ${openColumn === column.id ? "rotate-180" : ""}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
-                  </svg>
-                </div>
-              </button>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={(event) => {
+              setIsDragging(true);
+              setActiveId(event.active.id);
+            }}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => {
+              setIsDragging(false);
+              setDragOverColumnId(null);
+            }}
+          >
+            {columns.map((column) => {
+              const icon =
+                column.id === "todo"
+                  ? "📋"
+                  : column.id === "doing"
+                    ? "🔄"
+                    : "✅";
+              const shouldShowContent = isDragging || openColumn === column.id;
 
-              {openColumn === column.id && (
-                <div className="p-3">
-                  <div className="space-y-2">
-                    {boardTasks[column.id].map((task) => (
-                      <TaskCardContent key={task.id} task={task} />
-                    ))}
-                    {boardTasks[column.id].length === 0 && (
-                      <div className="text-center text-gray-400 text-sm py-4">
-                        Không có task nào
-                      </div>
-                    )}
-                  </div>
+              return (
+                <div
+                  key={column.id}
+                  className={`${column.color} rounded-xl overflow-hidden mb-4 transition-all duration-200 ${
+                    dragOverColumnId === column.id
+                      ? "ring-2 ring-blue-500 shadow-lg"
+                      : ""
+                  }`}
+                >
+                  <button
+                    onClick={() => {
+                      if (!isDragging) {
+                        setOpenColumn(
+                          openColumn === column.id ? null : column.id,
+                        );
+                      }
+                    }}
+                    className={`w-full ${column.headerColor} text-white p-4 flex justify-between items-center`}
+                  >
+                    <span className="font-semibold text-base">
+                      <span className="text-xl mr-1">{icon}</span>
+                      {column.title}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="bg-white/20 px-2 py-0.5 rounded-full text-sm font-medium">
+                        {boardTasks[column.id].length}
+                      </span>
+                      {!isDragging && (
+                        <svg
+                          className={`w-5 h-5 transition-transform duration-200 ${
+                            openColumn === column.id ? "rotate-180" : ""
+                          }`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 9l-7 7-7-7"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                  </button>
+
+                  {shouldShowContent && (
+                    <div className="p-3">
+                      <MobileDroppableColumn columnId={column.id}>
+                        <SortableContext
+                          items={boardTasks[column.id].map((t) => String(t.id))}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div className="space-y-2">
+                            {boardTasks[column.id].length === 0 && (
+                              <div className="text-center text-gray-400 text-sm py-6 border-2 border-dashed border-gray-300 rounded-lg bg-white/50">
+                                📌 Kéo task vào đây
+                              </div>
+                            )}
+                            {boardTasks[column.id].map((task) => (
+                              <SortableTaskCard key={task.id} task={task}>
+                                <TaskCardContent task={task} />
+                              </SortableTaskCard>
+                            ))}
+                          </div>
+                        </SortableContext>
+                      </MobileDroppableColumn>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
+              );
+            })}
+
+            <DragOverlay>
+              {activeId ? (
+                <div className="bg-white rounded-xl shadow-2xl p-4 opacity-95 cursor-grabbing w-[85vw] border-2 border-blue-400">
+                  {(() => {
+                    let task = null;
+                    for (const col of ["todo", "doing", "done"]) {
+                      const found = boardTasks[col].find(
+                        (t) => String(t.id) === activeId,
+                      );
+                      if (found) {
+                        task = found;
+                        break;
+                      }
+                    }
+                    if (task) {
+                      return (
+                        <div>
+                          <h4 className="font-semibold text-gray-800 text-base">
+                            {task.title}
+                          </h4>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {task.description || "📝 Không có mô tả"}
+                          </p>
+                          <div className="mt-2">
+                            {getPriorityBadge(task.priority)}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         </div>
 
-        {/* ✅ THÊM EditTaskModal VÀO ĐÂY */}
         <EditTaskModal
           task={selectedTask}
           token={token}
@@ -647,7 +845,6 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
           onSuccess={onTaskUpdate}
         />
 
-        {/* Các modal khác */}
         {timerTask && (
           <PomodoroTimer
             taskId={timerTask.id}
@@ -668,17 +865,78 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
             onSuccess={() => onTaskUpdate?.()}
           />
         )}
+
+        {/* Modal gán task mobile */}
+        {showAssignModal && selectedTaskForAssign && (
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold text-gray-800">👤 Gán task cho thành viên</h2>
+                  <button onClick={() => setShowAssignModal(false)} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-500">Task được gán</p>
+                  <p className="font-medium text-gray-800">{selectedTaskForAssign.title}</p>
+                </div>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {loadingMembers ? (
+                    <p className="text-center text-gray-500 py-4">Đang tải...</p>
+                  ) : boardMembers.length === 0 ? (
+                    <p className="text-center text-gray-500 py-4">Chưa có thành viên nào trong board</p>
+                  ) : (
+                    boardMembers.map((member) => (
+                      <button
+                        key={member.id}
+                        onClick={() => handleAssignTask(selectedTaskForAssign.id, member.id, member.name)}
+                        disabled={assigning}
+                        className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition flex items-center gap-3 border"
+                      >
+                        <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                          {member.name?.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-800">{member.name}</p>
+                          <p className="text-sm text-gray-500">{member.email}</p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex gap-3 mt-6">
+                  <button
+                    onClick={() => setShowAssignModal(false)}
+                    className="flex-1 px-4 py-2 bg-gray-200 rounded-lg"
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </>
     );
   }
 
-  // Desktop view (kéo thả bình thường)
+  // Desktop View
   return (
     <div>
       <div className="mb-6 flex justify-end">
         <button
           onClick={() => setShowArchived(!showArchived)}
-          className={`px-4 py-2 rounded-lg transition flex items-center gap-2 ${showArchived ? "bg-purple-500 text-white shadow-md" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
+          className={`px-4 py-2 rounded-lg transition flex items-center gap-2 ${
+            showArchived
+              ? "bg-purple-500 text-white shadow-md"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+          }`}
         >
           📦 Kho lưu trữ ({archivedTasks.length})
           <svg
@@ -706,7 +964,7 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {columns.map((column) => (
             <div key={column.id}>
-              <ColumnContent
+              <DesktopColumnContent
                 columnId={column.id}
                 tasks={boardTasks[column.id]}
               />
@@ -715,33 +973,32 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
         </div>
         <DragOverlay>
           {activeId ? (
-            <div className="bg-white rounded-lg shadow-lg p-3 opacity-90 draggable-item">
-              {activeId &&
-                (() => {
-                  let task = null;
-                  for (const col of ["todo", "doing", "done"]) {
-                    const found = boardTasks[col].find(
-                      (t) => String(t.id) === activeId,
-                    );
-                    if (found) {
-                      task = found;
-                      break;
-                    }
+            <div className="bg-white rounded-lg shadow-lg p-3 opacity-90 cursor-grabbing">
+              {(() => {
+                let task = null;
+                for (const col of ["todo", "doing", "done"]) {
+                  const found = boardTasks[col].find(
+                    (t) => String(t.id) === activeId,
+                  );
+                  if (found) {
+                    task = found;
+                    break;
                   }
-                  if (task) {
-                    return (
-                      <div>
-                        <h4 className="font-semibold text-gray-800 text-sm">
-                          {task.title}
-                        </h4>
-                        <p className="text-xs text-gray-500">
-                          {task.description || "📝 Không có mô tả"}
-                        </p>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
+                }
+                if (task) {
+                  return (
+                    <div>
+                      <h4 className="font-semibold text-gray-800 text-sm">
+                        {task.title}
+                      </h4>
+                      <p className="text-xs text-gray-500">
+                        {task.description || "📝 Không có mô tả"}
+                      </p>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           ) : null}
         </DragOverlay>
@@ -796,12 +1053,8 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
         <PomodoroTimer
           taskId={timerTask.id}
           taskTitle={timerTask.title}
-          onClose={() => {
-            setTimerTask(null);
-          }}
-          onComplete={() => {
-            onTaskUpdate?.();
-          }}
+          onClose={() => setTimerTask(null)}
+          onComplete={() => onTaskUpdate?.()}
         />
       )}
 
@@ -813,10 +1066,65 @@ export default function KanbanBoard({ tasks, token, onTaskUpdate }) {
             setShowMoodPicker(false);
             setCompletedTaskId(null);
           }}
-          onSuccess={() => {
-            onTaskUpdate?.();
-          }}
+          onSuccess={() => onTaskUpdate?.()}
         />
+      )}
+
+      {/* Modal gán task desktop */}
+      {showAssignModal && selectedTaskForAssign && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-800">👤 Gán task cho thành viên</h2>
+                <button onClick={() => setShowAssignModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-500">Task được gán</p>
+                <p className="font-medium text-gray-800">{selectedTaskForAssign.title}</p>
+              </div>
+
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {loadingMembers ? (
+                  <p className="text-center text-gray-500 py-4">Đang tải...</p>
+                ) : boardMembers.length === 0 ? (
+                  <p className="text-center text-gray-500 py-4">Chưa có thành viên nào trong board</p>
+                ) : (
+                  boardMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      onClick={() => handleAssignTask(selectedTaskForAssign.id, member.id, member.name)}
+                      disabled={assigning}
+                      className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition flex items-center gap-3 border"
+                    >
+                      <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                        {member.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-800">{member.name}</p>
+                        <p className="text-sm text-gray-500">{member.email}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowAssignModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-200 rounded-lg"
+                >
+                  Hủy
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

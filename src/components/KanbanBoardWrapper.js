@@ -15,7 +15,7 @@ const KanbanBoard = dynamic(
   }
 );
 
-export default function KanbanBoardWrapper({ tasks, token, onTaskUpdate }) {
+export default function KanbanBoardWrapper({ tasks, token, board, onTaskUpdate }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -30,5 +30,5 @@ export default function KanbanBoardWrapper({ tasks, token, onTaskUpdate }) {
     );
   }
 
-  return <KanbanBoard tasks={tasks} token={token} onTaskUpdate={onTaskUpdate} />;
+  return <KanbanBoard tasks={tasks} token={token} board={board} onTaskUpdate={onTaskUpdate} />;
 }

@@ -1,19 +1,16 @@
 // components/SearchBar.js
 "use client";
-import { useState, useEffect, useCallback } from "react";
-import VoiceInput from "./VoiceInput"; // ✅ THÊM IMPORT
-import { toast } from "sonner"; // ✅ THÊM IMPORT
+import { useState, useEffect } from "react";
 
-export default function SearchBar({ onSearch, onFilter, initialFilters = {} }) {
+export default function SearchBar({ onSearch, onFilter, initialFilters = {}, boardMembers = [] }) {
   const [searchTerm, setSearchTerm] = useState(initialFilters.search || "");
   const [filters, setFilters] = useState({
     status: initialFilters.status || "",
     priority: initialFilters.priority || "",
+    assignedTo: initialFilters.assignedTo || "",
   });
   const [showFilters, setShowFilters] = useState(false);
-  const [isListening, setIsListening] = useState(false); // ✅ THÊM STATE
 
-  // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => {
       onSearch(searchTerm);
@@ -22,6 +19,7 @@ export default function SearchBar({ onSearch, onFilter, initialFilters = {} }) {
   }, [searchTerm, onSearch]);
 
   const handleFilterChange = (key, value) => {
+    console.log(`📌 Filter change: ${key} = ${value}`);
     const newFilters = { ...filters, [key]: value };
     setFilters(newFilters);
     onFilter(newFilters);
@@ -29,19 +27,16 @@ export default function SearchBar({ onSearch, onFilter, initialFilters = {} }) {
 
   const clearFilters = () => {
     setSearchTerm("");
-    setFilters({ status: "", priority: "" });
+    setFilters({ status: "", priority: "", assignedTo: "" });
     onSearch("");
-    onFilter({ status: "", priority: "" });
+    onFilter({ status: "", priority: "", assignedTo: "" });
   };
 
-  // ✅ HÀM XỬ LÝ VOICE SEARCH
-  const handleVoiceResult = (text) => {
-    setSearchTerm(text);
-    onSearch(text);
-    toast.info(`🔍 Tìm kiếm: "${text}"`);
-  };
+  const hasActiveFilters = filters.status || filters.priority || filters.assignedTo || searchTerm;
 
-  const hasActiveFilters = filters.status || filters.priority || searchTerm;
+  const uniqueMembers = boardMembers.filter((member, index, self) => 
+    index === self.findIndex(m => m.id === member.id)
+  );
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
@@ -52,20 +47,12 @@ export default function SearchBar({ onSearch, onFilter, initialFilters = {} }) {
           </svg>
           <input
             type="text"
-            placeholder={isListening ? "🎤 Đang nghe..." : "Tìm kiếm task theo tiêu đề hoặc mô tả..."}
+            placeholder="🔍 Tìm kiếm theo tiêu đề, mô tả hoặc email thành viên..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${
-              isListening ? "border-red-400 bg-red-50" : "border-gray-300"
-            }`}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
           />
         </div>
-        
-        {/* ✅ THÊM NÚT VOICE INPUT */}
-        <VoiceInput 
-          onResult={handleVoiceResult}
-          onListeningChange={setIsListening}
-        />
         
         <button
           onClick={() => setShowFilters(!showFilters)}
@@ -86,14 +73,8 @@ export default function SearchBar({ onSearch, onFilter, initialFilters = {} }) {
         )}
       </div>
 
-      {isListening && (
-        <p className="text-xs text-blue-500 mt-2 animate-pulse">
-          🎤 Đang nghe... Hãy nói từ khóa cần tìm
-        </p>
-      )}
-
       {showFilters && (
-        <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
             <select
@@ -120,6 +101,25 @@ export default function SearchBar({ onSearch, onFilter, initialFilters = {} }) {
               <option value="medium">🟡 Trung bình</option>
               <option value="high">🔴 Cao</option>
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Thành viên được gán</label>
+            <select
+              value={filters.assignedTo}
+              onChange={(e) => handleFilterChange("assignedTo", e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">📋 Tất cả</option>
+              <option value="unassigned">❌ Chưa gán</option>
+              <option value="me">👤 Giao cho tôi</option>
+              {uniqueMembers.map((member) => (
+                <option key={member.id} value={member.id}>
+                  📧 {member.email} ({member.name})
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Lọc task theo email người được giao</p>
           </div>
         </div>
       )}

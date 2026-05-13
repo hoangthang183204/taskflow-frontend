@@ -13,7 +13,7 @@ export default function CTASection() {
 
   const handleGetStarted = () => {
     if (isLoggedIn) {
-      router.push("/task");
+      router.push("/board");  // ✅ SỬA: /task -> /board
     } else {
       router.push("/login");
     }

@@ -1,4 +1,3 @@
-// app/profile/page.js
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -118,7 +117,7 @@ export default function ProfilePage() {
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => router.push("/task")}
+                onClick={() => router.push("/board")}  // ✅ SỬA: /task -> /board
                 className="p-2 hover:bg-gray-100 rounded-lg transition"
               >
                 <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

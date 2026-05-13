@@ -8,12 +8,11 @@ export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const router = useRouter();
   
-  // ✅ Lấy từ Zustand store
   const { isAuthenticated, token, logout } = useAuthStore();
   const isLoggedIn = isAuthenticated && !!token;
 
   const handleDashboard = () => {
-    router.push("/task");
+    router.push("/board");  // ✅ SỬA: /task -> /board
   };
 
   const handleLogout = () => {
@@ -49,7 +48,7 @@ export default function Navbar() {
                   onClick={handleDashboard}
                   className="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition shadow-md"
                 >
-                  Dashboard
+                  Boards  {/* ✅ SỬA: Dashboard -> Boards */}
                 </button>
                 <button
                   onClick={handleLogout}
@@ -95,7 +94,7 @@ export default function Navbar() {
                 {isLoggedIn ? (
                   <div className="flex flex-col gap-2">
                     <button onClick={handleDashboard} className="w-full bg-blue-600 text-white px-5 py-2 rounded-lg">
-                      Dashboard
+                      Boards
                     </button>
                     <button onClick={handleLogout} className="w-full text-red-600 border border-red-600 px-5 py-2 rounded-lg">
                       Đăng xuất
