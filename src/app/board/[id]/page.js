@@ -83,7 +83,7 @@ export default function BoardDetailPage() {
       const data = await response.json();
       const boardData = data.data || data;
       setBoard(boardData);
-      setIsOwner(boardData.userId === user?.id);
+      setIsOwner(String(boardData.userId) === String(user?.id));
     } catch (error) {
       console.error("Lỗi fetch board:", error);
       setError("Không thể tải board");
