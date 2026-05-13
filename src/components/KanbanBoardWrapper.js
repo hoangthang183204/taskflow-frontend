@@ -2,7 +2,6 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 
-// Dynamic import để tránh SSR
 const KanbanBoard = dynamic(
   () => import('@/components/KanbanBoard'),
   {
