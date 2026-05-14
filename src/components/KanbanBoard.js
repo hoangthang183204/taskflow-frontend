@@ -163,7 +163,11 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   const handleAssignTask = async (taskId, userId, userName) => {
     setAssigning(true);
     try {
-      await updateTask(taskId, { assignedTo: userId, assignedByName: userName }, token);
+      await updateTask(
+        taskId,
+        { assignedTo: userId, assignedByName: userName },
+        token,
+      );
       toast.success("Đã gán task cho thành viên");
       onTaskUpdate?.();
       setShowAssignModal(false);
@@ -537,7 +541,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
               </button>
             )}
 
-            {isTodo && !isDone && (
+            {isTodo && !isDone && boardMembers.length > 0 && (
               <button
                 onClick={() => {
                   setSelectedTaskForAssign(task);
@@ -545,7 +549,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                 }}
                 className="flex-1 py-2 text-blue-600 hover:bg-blue-50 text-sm flex items-center justify-center gap-1 border-l border-gray-100"
               >
-                👤 Gán
+                👤 Giao cho
               </button>
             )}
 
