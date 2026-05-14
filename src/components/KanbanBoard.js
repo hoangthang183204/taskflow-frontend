@@ -140,14 +140,20 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337"}/api/board/${board.id}/members/assignable`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
       if (response.ok) {
         const data = await response.json();
-        setBoardMembers(Array.isArray(data) ? data : []);
+        const members = data.data || data;
+        setBoardMembers(Array.isArray(members) ? members : []);
+        console.log("✅ Board members loaded:", members); // Debug
+      } else {
+        console.error("API error:", response.status);
+        setBoardMembers([]);
       }
     } catch (error) {
       console.error("Lỗi fetch members:", error);
+      setBoardMembers([]);
     } finally {
       setLoadingMembers(false);
     }
@@ -157,7 +163,11 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   const handleAssignTask = async (taskId, userId, userName) => {
     setAssigning(true);
     try {
-      await updateTask(taskId, { assignedTo: userId, assignedByName: userName }, token);
+      await updateTask(
+        taskId,
+        { assignedTo: userId, assignedByName: userName },
+        token,
+      );
       toast.success("Đã gán task cho thành viên");
       onTaskUpdate?.();
       setShowAssignModal(false);
@@ -531,8 +541,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
               </button>
             )}
 
-            {/* Nút Gán task - CHỈ hiển thị ở TODO */}
-            {isTodo && boardMembers.length > 0 && !isDone && (
+            {isTodo && !isDone && (
               <button
                 onClick={() => {
                   setSelectedTaskForAssign(task);
@@ -872,29 +881,56 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
             <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
               <div className="p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-gray-800">👤 Gán task cho thành viên</h2>
-                  <button onClick={() => setShowAssignModal(false)} className="text-gray-400 hover:text-gray-600">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <h2 className="text-xl font-bold text-gray-800">
+                    👤 Gán task cho thành viên
+                  </h2>
+                  <button
+                    onClick={() => setShowAssignModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
                     </svg>
                   </button>
                 </div>
 
                 <div className="mb-4 p-3 bg-gray-50 rounded-lg">
                   <p className="text-sm text-gray-500">Task được gán</p>
-                  <p className="font-medium text-gray-800">{selectedTaskForAssign.title}</p>
+                  <p className="font-medium text-gray-800">
+                    {selectedTaskForAssign.title}
+                  </p>
                 </div>
 
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {loadingMembers ? (
-                    <p className="text-center text-gray-500 py-4">Đang tải...</p>
+                    <p className="text-center text-gray-500 py-4">
+                      Đang tải...
+                    </p>
                   ) : boardMembers.length === 0 ? (
-                    <p className="text-center text-gray-500 py-4">Chưa có thành viên nào trong board</p>
+                    <p className="text-center text-gray-500 py-4">
+                      Chưa có thành viên nào trong board
+                    </p>
                   ) : (
                     boardMembers.map((member) => (
                       <button
                         key={member.id}
-                        onClick={() => handleAssignTask(selectedTaskForAssign.id, member.id, member.name)}
+                        onClick={() =>
+                          handleAssignTask(
+                            selectedTaskForAssign.id,
+                            member.id,
+                            member.name,
+                          )
+                        }
                         disabled={assigning}
                         className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition flex items-center gap-3 border"
                       >
@@ -902,8 +938,12 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                           {member.name?.charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-800">{member.name}</p>
-                          <p className="text-sm text-gray-500">{member.email}</p>
+                          <p className="font-medium text-gray-800">
+                            {member.name}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {member.email}
+                          </p>
                         </div>
                       </button>
                     ))
@@ -1076,29 +1116,54 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-gray-800">👤 Gán task cho thành viên</h2>
-                <button onClick={() => setShowAssignModal(false)} className="text-gray-400 hover:text-gray-600">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <h2 className="text-xl font-bold text-gray-800">
+                  👤 Gán task cho thành viên
+                </h2>
+                <button
+                  onClick={() => setShowAssignModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
 
               <div className="mb-4 p-3 bg-gray-50 rounded-lg">
                 <p className="text-sm text-gray-500">Task được gán</p>
-                <p className="font-medium text-gray-800">{selectedTaskForAssign.title}</p>
+                <p className="font-medium text-gray-800">
+                  {selectedTaskForAssign.title}
+                </p>
               </div>
 
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {loadingMembers ? (
                   <p className="text-center text-gray-500 py-4">Đang tải...</p>
                 ) : boardMembers.length === 0 ? (
-                  <p className="text-center text-gray-500 py-4">Chưa có thành viên nào trong board</p>
+                  <p className="text-center text-gray-500 py-4">
+                    Chưa có thành viên nào trong board
+                  </p>
                 ) : (
                   boardMembers.map((member) => (
                     <button
                       key={member.id}
-                      onClick={() => handleAssignTask(selectedTaskForAssign.id, member.id, member.name)}
+                      onClick={() =>
+                        handleAssignTask(
+                          selectedTaskForAssign.id,
+                          member.id,
+                          member.name,
+                        )
+                      }
                       disabled={assigning}
                       className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition flex items-center gap-3 border"
                     >
@@ -1106,7 +1171,9 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                         {member.name?.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-medium text-gray-800">{member.name}</p>
+                        <p className="font-medium text-gray-800">
+                          {member.name}
+                        </p>
                         <p className="text-sm text-gray-500">{member.email}</p>
                       </div>
                     </button>
