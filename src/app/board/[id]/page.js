@@ -182,7 +182,15 @@ export default function BoardDetailPage() {
       }
 
       const data = await response.json();
-      setBoardMembers(Array.isArray(data) ? data : []);
+
+      // ✅ SỬA Ở ĐÂY: Lấy mảng từ data.data
+      if (data.success && Array.isArray(data.data)) {
+        setBoardMembers(data.data);
+      } else if (Array.isArray(data)) {
+        setBoardMembers(data);
+      } else {
+        setBoardMembers([]);
+      }
     } catch (error) {
       console.error("Lỗi fetch members:", error);
       setBoardMembers([]);
