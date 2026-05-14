@@ -163,11 +163,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   const handleAssignTask = async (taskId, userId, userName) => {
     setAssigning(true);
     try {
-      await updateTask(
-        taskId,
-        { assignedTo: userId, assignedByName: userName },
-        token,
-      );
+      await updateTask(taskId, { assignedTo: userId, assignedByName: userName }, token);
       toast.success("Đã gán task cho thành viên");
       onTaskUpdate?.();
       setShowAssignModal(false);
