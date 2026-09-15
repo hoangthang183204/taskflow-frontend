@@ -1,12 +1,14 @@
+// components/KanbanBoard.js
 "use client";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import useAuthStore from "@/store/authStore";
 import {
   DndContext,
-  closestCenter,
+  closestCorners,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
+  MouseSensor,
   useSensor,
   useSensors,
   DragOverlay,
@@ -29,6 +31,28 @@ import EditTaskModal from "./EditTaskModal";
 import PomodoroTimer from "./PomodoroTimer";
 import MoodPicker from "./MoodPicker";
 import SortableTaskCard from "./SortableTaskCard";
+import PendingOverlay from "./PendingOverlay";
+import useBoardSocket from "@/hooks/useBoardSocket";
+import { useOptimisticTasks } from "@/hooks/useOptimisticTasks";
+import {
+  IconEdit,
+  IconUser,
+  IconArchive,
+  IconTrash,
+  IconClock,
+  IconCalendar,
+  IconAlertTriangle,
+  IconChevronDown,
+  IconChevronLeft,
+  IconPackage,
+  IconCircle,
+  IconCircleDot,
+  IconCircleCheck,
+  IconListChecks,
+  IconPlus,
+  IconRefresh,
+  IconX,
+} from "./Icons";
 
 const columns = [
   {
@@ -36,30 +60,58 @@ const columns = [
     title: "To Do",
     color: "bg-gray-100",
     headerColor: "bg-gray-500",
+    Icon: IconCircle,
   },
   {
     id: "doing",
     title: "Doing",
     color: "bg-yellow-50",
     headerColor: "bg-yellow-500",
+    Icon: IconCircleDot,
   },
   {
     id: "done",
     title: "Done",
     color: "bg-green-50",
     headerColor: "bg-green-500",
+    Icon: IconCircleCheck,
   },
 ];
+
+const dedupById = (arr) => {
+  const map = new Map();
+  for (const item of arr) {
+    const id = String(item.id);
+    if (!map.has(id)) map.set(id, item);
+  }
+  return [...map.values()];
+};
 
 export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   const { user } = useAuthStore();
   const currentUserId = user?.id;
 
-  const [boardTasks, setBoardTasks] = useState({
-    todo: [],
-    doing: [],
-    done: [],
-  });
+  const wsDeletedRef = useRef(new Set());
+  const wsArchivedRef = useRef(new Set());
+  const wsRestoredRef = useRef(new Set());
+  const tasksSignatureRef = useRef("");
+
+  const {
+    tasks: boardTasks,
+    setTasks: setBoardTasks,
+    isPending,
+    markPending,
+    unmarkPending,
+    markRecentOptimistic,
+    isRecentOptimistic,
+    clearRecentOptimistic,
+    shouldSkipSync,
+    execute,
+    updateTaskInPlace,
+    moveTask,
+    removeTask,
+  } = useOptimisticTasks({ todo: [], doing: [], done: [] });
+
   const [archivedTasks, setArchivedTasks] = useState([]);
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState({});
@@ -79,30 +131,163 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOverColumnId, setDragOverColumnId] = useState(null);
 
-  // State cho gán task
+  const [collapsed, setCollapsed] = useState({
+    todo: false,
+    doing: false,
+    done: false,
+  });
+
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedTaskForAssign, setSelectedTaskForAssign] = useState(null);
   const [boardMembers, setBoardMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [assigning, setAssigning] = useState(false);
 
+  const isDraggingRef = useRef(false);
+  const recentReorderRef = useRef(new Set());
+  const scrollPositionsRef = useRef({ todo: 0, doing: 0, done: 0 });
+
+  // ============================================================
+  // SENSORS
+  // ============================================================
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 200,
-        tolerance: 5,
-      },
+      activationConstraint: { delay: 100, tolerance: 8 },
     }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    }),
+    })
   );
 
+  // ============================================================
+  // WEBSOCKET HANDLERS
+  // ============================================================
+  useBoardSocket({
+    boardId: board?.id,
+    token,
+    onTaskCreated: (task) => {
+      const id = String(task.id);
+      wsDeletedRef.current.delete(id);
+      wsArchivedRef.current.delete(id);
+      wsRestoredRef.current.delete(id);
+
+      setBoardTasks((prev) => {
+        const next = {
+          todo: [...prev.todo],
+          doing: [...prev.doing],
+          done: [...prev.done],
+        };
+        for (const col of ["todo", "doing", "done"]) {
+          next[col] = next[col].filter((t) => String(t.id) !== id);
+        }
+        const status = task.status || "todo";
+        if (next[status]) next[status].push(task);
+        return next;
+      });
+    },
+
+    onTaskUpdated: (task) => {
+      const id = String(task.id);
+
+      if (shouldSkipSync(id)) return;
+      if (isDraggingRef.current) return;
+      if (recentReorderRef.current.has(id)) return;
+
+      if (task.isArchived || task.archivedAt) {
+        wsArchivedRef.current.add(id);
+
+        setBoardTasks((prev) => {
+          const next = { ...prev };
+          for (const col of ["todo", "doing", "done"]) {
+            next[col] = next[col].filter((t) => String(t.id) !== id);
+          }
+          return next;
+        });
+
+        setArchivedTasks((prev) => {
+          if (prev.some((t) => String(t.id) === id)) return prev;
+          return [...prev, task];
+        });
+        return;
+      }
+
+      setBoardTasks((prev) => {
+        const next = { todo: [], doing: [], done: [] };
+        for (const col of ["todo", "doing", "done"]) {
+          next[col] = prev[col].filter((t) => String(t.id) !== id);
+        }
+        const status = task.status || "todo";
+        if (next[status]) next[status].push(task);
+        return next;
+      });
+    },
+
+    onTaskDeleted: (id) => {
+      const taskId = String(id);
+      wsDeletedRef.current.add(taskId);
+
+      setBoardTasks((prev) => {
+        const next = {};
+        for (const col of ["todo", "doing", "done"]) {
+          next[col] = prev[col].filter((t) => String(t.id) !== taskId);
+        }
+        return next;
+      });
+    },
+
+    onTaskRestored: (task) => {
+      const id = String(task.id);
+      wsDeletedRef.current.delete(id);
+      wsArchivedRef.current.delete(id);
+      wsRestoredRef.current.add(id);
+      setTimeout(() => wsRestoredRef.current.delete(id), 5000);
+
+      setArchivedTasks((prev) => prev.filter((t) => String(t.id) !== id));
+
+      setBoardTasks((prev) => {
+        const next = {
+          todo: [...prev.todo],
+          doing: [...prev.doing],
+          done: [...prev.done],
+        };
+        for (const col of ["todo", "doing", "done"]) {
+          next[col] = next[col].filter((t) => String(t.id) !== id);
+        }
+        const status = task.status || "todo";
+        if (next[status]) next[status].push(task);
+        return next;
+      });
+    },
+
+    onTaskArchived: (task) => {
+      const id = String(task.id);
+      wsArchivedRef.current.add(id);
+      wsRestoredRef.current.delete(id);
+
+      setBoardTasks((prev) => {
+        const next = {
+          todo: [...prev.todo],
+          doing: [...prev.doing],
+          done: [...prev.done],
+        };
+        for (const col of ["todo", "doing", "done"]) {
+          next[col] = next[col].filter((t) => String(t.id) !== id);
+        }
+        return next;
+      });
+
+      setArchivedTasks((prev) => {
+        if (prev.some((t) => String(t.id) === id)) return prev;
+        return [...prev, task];
+      });
+    },
+  });
+
+  // ============================================================
+  // EFFECTS
+  // ============================================================
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
@@ -114,41 +299,180 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
     setEditingTask(null);
   }, [tasks]);
 
+  // ============================================================
+  // SYNC tasks prop → state
+  // ============================================================
   useEffect(() => {
-    const activeTasks = tasks.filter((t) => !t.isArchived);
-    const archived = tasks.filter((t) => t.isArchived);
-    setBoardTasks({
-      todo: activeTasks.filter((t) => t.status === "todo"),
-      doing: activeTasks.filter((t) => t.status === "doing"),
-      done: activeTasks.filter((t) => t.status === "done"),
+    if (isDraggingRef.current) {
+      console.log("⏭️ [sync effect] SKIP vì đang kéo");
+      return;
+    }
+
+    const signature = tasks
+      .map((t) => `${t.id}:${t.updatedAt || t.createdAt}:${t.status}`)
+      .sort()
+      .join("|");
+
+    if (tasksSignatureRef.current === signature) {
+      return;
+    }
+    tasksSignatureRef.current = signature;
+
+    const activeTasks = tasks.filter((t) => !t.isArchived && !t.archivedAt);
+    const archived = tasks.filter((t) => t.isArchived || t.archivedAt);
+
+    const propActiveIds = new Set(activeTasks.map((t) => String(t.id)));
+    const propArchivedIds = new Set(archived.map((t) => String(t.id)));
+
+    const pendingOrRecent = activeTasks.filter((t) => shouldSkipSync(t.id));
+    if (pendingOrRecent.length > 0) {
+      console.log(
+        "⏭️ [sync effect] Skip các task:",
+        pendingOrRecent.map((t) => t.id)
+      );
+    }
+
+    setBoardTasks((prev) => {
+      const allTasksMap = new Map();
+
+      for (const col of ["todo", "doing", "done"]) {
+        for (const t of prev[col]) {
+          const id = String(t.id);
+          if (wsDeletedRef.current.has(id)) continue;
+          if (wsArchivedRef.current.has(id)) continue;
+          if (propArchivedIds.has(id)) continue;
+
+          if (shouldSkipSync(id)) {
+            if (!allTasksMap.has(id)) allTasksMap.set(id, t);
+            continue;
+          }
+          if (!allTasksMap.has(id)) allTasksMap.set(id, t);
+        }
+      }
+
+      for (const t of activeTasks) {
+        const id = String(t.id);
+        if (wsDeletedRef.current.has(id)) continue;
+        if (wsArchivedRef.current.has(id)) continue;
+        if (shouldSkipSync(id)) continue;
+
+        if (allTasksMap.has(id)) {
+          allTasksMap.set(id, t);
+        } else {
+          allTasksMap.set(id, t);
+        }
+      }
+
+      const finalMap = new Map();
+      for (const [id, task] of allTasksMap.entries()) {
+        if (propActiveIds.has(id)) {
+          finalMap.set(id, task);
+        } else if (shouldSkipSync(id)) {
+          finalMap.set(id, task);
+        } else if (wsRestoredRef.current.has(id)) {
+          finalMap.set(id, task);
+        }
+      }
+
+      const merged = { todo: [], doing: [], done: [] };
+      const seen = new Set();
+
+      for (const task of finalMap.values()) {
+        const id = String(task.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const status = task.status || "todo";
+        if (merged[status]) merged[status].push(task);
+        else merged.todo.push(task);
+      }
+
+      const prevSignature = `${prev.todo
+        .map((t) => String(t.id))
+        .join(",")}|${prev.doing.map((t) => String(t.id)).join(",")}|${prev.done
+        .map((t) => String(t.id))
+        .join(",")}`;
+      const newSignature = `${merged.todo
+        .map((t) => String(t.id))
+        .join(",")}|${merged.doing
+        .map((t) => String(t.id))
+        .join(",")}|${merged.done.map((t) => String(t.id)).join(",")}`;
+
+      if (prevSignature === newSignature) {
+        const dataChanged =
+          prev.todo.length !== merged.todo.length ||
+          prev.doing.length !== merged.doing.length ||
+          prev.done.length !== merged.done.length;
+        if (!dataChanged) return prev;
+      }
+
+      return merged;
     });
-    setArchivedTasks(archived);
+
+    setArchivedTasks((prev) => {
+      const map = new Map();
+
+      for (const t of archived) {
+        const id = String(t.id);
+        if (wsDeletedRef.current.has(id)) continue;
+        if (!map.has(id)) map.set(id, t);
+      }
+
+      const now = Date.now();
+      for (const t of prev) {
+        const id = String(t.id);
+        if (map.has(id)) continue;
+        if (wsDeletedRef.current.has(id)) continue;
+        if (shouldSkipSync(id)) {
+          map.set(id, t);
+          continue;
+        }
+        const archivedAt = t.archivedAt ? Number(t.archivedAt) : 0;
+        if (archivedAt && now - archivedAt < 5000) {
+          map.set(id, t);
+        }
+      }
+
+      const result = [...map.values()];
+      if (
+        prev.length === result.length &&
+        prev.every((t, i) => String(t.id) === String(result[i]?.id))
+      ) {
+        return prev;
+      }
+      return result;
+    });
+
+    for (const id of [...wsArchivedRef.current]) {
+      if (propActiveIds.has(id)) {
+        wsArchivedRef.current.delete(id);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks]);
 
-  // Lấy danh sách thành viên trong board để gán task
   useEffect(() => {
     if (board?.id && token) {
       fetchBoardMembers();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board?.id, token]);
 
+  // ============================================================
+  // MEMBERS
+  // ============================================================
   const fetchBoardMembers = async () => {
     if (!board?.id) return;
     try {
       setLoadingMembers(true);
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337"}/api/board/${board.id}/members/assignable`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       if (response.ok) {
         const data = await response.json();
         const members = data.data || data;
         setBoardMembers(Array.isArray(members) ? members : []);
-        console.log("✅ Board members loaded:", members); // Debug
       } else {
-        console.error("API error:", response.status);
         setBoardMembers([]);
       }
     } catch (error) {
@@ -159,26 +483,42 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
     }
   };
 
-  // Gán task cho thành viên
+  // ============================================================
+  // ASSIGN TASK
+  // ============================================================
   const handleAssignTask = async (taskId, userId, userName) => {
     setAssigning(true);
-    try {
-      await updateTask(
-        taskId,
-        { assignedTo: userId, assignedByName: userName },
-        token,
-      );
-      toast.success("Đã gán task cho thành viên");
-      onTaskUpdate?.();
-      setShowAssignModal(false);
-      setSelectedTaskForAssign(null);
-    } catch (error) {
-      toast.error(error.message || "Không thể gán task");
-    } finally {
-      setAssigning(false);
-    }
+    markPending(taskId);
+    markRecentOptimistic(taskId);
+
+    await execute(
+      updateTaskInPlace(taskId, () => ({
+        assignedTo: userId,
+        assignedByName: userName,
+      })),
+      () =>
+        updateTask(
+          taskId,
+          { assignedTo: userId, assignedByName: userName },
+          token
+        ),
+      {
+        errorMessage: "Không thể gán task",
+        onSuccess: () => {
+          toast.success("Đã gán task cho thành viên");
+          setShowAssignModal(false);
+          setSelectedTaskForAssign(null);
+        },
+      }
+    );
+
+    unmarkPending(taskId);
+    setAssigning(false);
   };
 
+  // ============================================================
+  // HELPERS
+  // ============================================================
   const getTodayDate = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -188,24 +528,35 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   };
 
   const getPriorityBadge = (priority) => {
-    const badges = {
-      low: (
-        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
-          🟢 Thấp
-        </span>
-      ),
-      medium: (
-        <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">
-          🟡 Trung
-        </span>
-      ),
-      high: (
-        <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">
-          🔴 Cao
-        </span>
-      ),
+    const config = {
+      low: {
+        color: "bg-green-500",
+        bg: "bg-green-50",
+        text: "text-green-700",
+        label: "Thấp",
+      },
+      medium: {
+        color: "bg-yellow-500",
+        bg: "bg-yellow-50",
+        text: "text-yellow-700",
+        label: "Trung",
+      },
+      high: {
+        color: "bg-red-500",
+        bg: "bg-red-50",
+        text: "text-red-700",
+        label: "Cao",
+      },
     };
-    return badges[priority] || badges.medium;
+    const c = config[priority] || config.medium;
+    return (
+      <span
+        className={`inline-flex items-center gap-1 text-[10px] ${c.bg} ${c.text} px-1.5 py-0.5 rounded font-medium`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full ${c.color}`} />
+        {c.label}
+      </span>
+    );
   };
 
   const getDueDateWarning = (dueDate, status) => {
@@ -216,12 +567,25 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
     due.setHours(0, 0, 0, 0);
     const daysLeft = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
     if (daysLeft < 0)
-      return <span className="text-xs text-red-500">⚠️ Quá hạn</span>;
+      return (
+        <span className="inline-flex items-center gap-0.5 text-[10px] text-red-500 font-medium">
+          <IconAlertTriangle className="w-3 h-3" />
+          Quá hạn
+        </span>
+      );
     if (daysLeft === 0)
-      return <span className="text-xs text-orange-500">⚠️ Hôm nay</span>;
+      return (
+        <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-500 font-medium">
+          <IconAlertTriangle className="w-3 h-3" />
+          Hôm nay
+        </span>
+      );
     if (daysLeft <= 2)
       return (
-        <span className="text-xs text-yellow-500">⚠️ Còn {daysLeft} ngày</span>
+        <span className="inline-flex items-center gap-0.5 text-[10px] text-yellow-600 font-medium">
+          <IconAlertTriangle className="w-3 h-3" />
+          {daysLeft}n
+        </span>
       );
     return null;
   };
@@ -245,26 +609,35 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
       return;
     }
 
-    setLoading((prev) => ({ ...prev, [taskId]: true }));
-    try {
-      await updateTask(
-        taskId,
-        {
-          title: editTitle.trim(),
-          description: editDesc.trim(),
-          dueDate: editDueDate || null,
-          priority: editPriority,
-        },
-        token,
-      );
-      toast.success("Cập nhật thành công");
-      setEditingTask(null);
-      onTaskUpdate?.();
-    } catch (error) {
-      toast.error("Không thể cập nhật");
-    } finally {
-      setLoading((prev) => ({ ...prev, [taskId]: false }));
-    }
+    markPending(taskId);
+    markRecentOptimistic(taskId);
+    setEditingTask(null);
+
+    await execute(
+      updateTaskInPlace(taskId, () => ({
+        title: editTitle.trim(),
+        description: editDesc.trim(),
+        dueDate: editDueDate || null,
+        priority: editPriority,
+      })),
+      () =>
+        updateTask(
+          taskId,
+          {
+            title: editTitle.trim(),
+            description: editDesc.trim(),
+            dueDate: editDueDate || null,
+            priority: editPriority,
+          },
+          token
+        ),
+      {
+        errorMessage: "Không thể cập nhật task",
+        onSuccess: () => toast.success("Cập nhật thành công"),
+      }
+    );
+
+    unmarkPending(taskId);
   };
 
   const cancelEdit = () => {
@@ -275,80 +648,211 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
     setEditPriority("medium");
   };
 
-  const handleDelete = async (taskId) => {
-    if (!window.confirm("Bạn có chắc muốn xóa task này vĩnh viễn?")) return;
-    try {
-      await deleteTask(taskId, token);
-      toast.success("Xóa task thành công");
-      onTaskUpdate?.();
-    } catch (error) {
-      toast.error("Không thể xóa task");
-    }
-  };
-
   const handleSoftDelete = async (taskId) => {
     if (!window.confirm("Bạn có chắc muốn chuyển task này vào thùng rác?"))
       return;
-    try {
-      await softDeleteTask(taskId, token);
-      toast.success("Đã chuyển vào thùng rác");
-      onTaskUpdate?.();
-    } catch (error) {
-      toast.error("Không thể xóa task");
+
+    const taskIdStr = String(taskId);
+    wsDeletedRef.current.add(taskIdStr);
+    markPending(taskId);
+    markRecentOptimistic(taskId);
+
+    let taskSnapshot = null;
+    for (const col of ["todo", "doing", "done"]) {
+      const found = boardTasks[col].find((t) => String(t.id) === taskIdStr);
+      if (found) {
+        taskSnapshot = { ...found };
+        break;
+      }
+    }
+
+    const result = await execute(
+      removeTask(taskId),
+      () => softDeleteTask(taskId, token),
+      {
+        errorMessage: "Không thể xóa task",
+        onError: () => {
+          wsDeletedRef.current.delete(taskIdStr);
+        },
+      }
+    );
+
+    unmarkPending(taskId);
+
+    if (result.success && taskSnapshot) {
+      toast.success("Đã chuyển vào thùng rác", {
+        action: {
+          label: "Hoàn tác",
+          onClick: async () => {
+            try {
+              const { restoreFromTrash } = await import("@/services/api");
+              await restoreFromTrash(taskId, token);
+              wsDeletedRef.current.delete(taskIdStr);
+              clearRecentOptimistic(taskId);
+              setBoardTasks((prev) => {
+                const next = { ...prev };
+                const status = taskSnapshot.status || "todo";
+                next[status] = [...next[status], taskSnapshot];
+                return next;
+              });
+              toast.success("Đã hoàn tác");
+            } catch {
+              toast.error("Không thể hoàn tác");
+            }
+          },
+        },
+        duration: 5000,
+      });
     }
   };
 
   const handleArchive = async (taskId) => {
-    try {
-      await archiveTask(taskId, token);
-      toast.success("Đã chuyển vào kho lưu trữ");
-      onTaskUpdate?.();
-    } catch (error) {
-      toast.error("Không thể lưu trữ task");
+    let taskToArchive = null;
+    for (const col of ["todo", "doing", "done"]) {
+      const found = boardTasks[col].find((t) => String(t.id) === String(taskId));
+      if (found) {
+        taskToArchive = found;
+        break;
+      }
     }
+    if (!taskToArchive) return;
+
+    const taskIdStr = String(taskId);
+    wsArchivedRef.current.add(taskIdStr);
+    markPending(taskId);
+    markRecentOptimistic(taskId);
+
+    setArchivedTasks((prev) => {
+      if (prev.some((t) => String(t.id) === taskIdStr)) return prev;
+      return [
+        ...prev,
+        { ...taskToArchive, isArchived: true, archivedAt: Date.now() },
+      ];
+    });
+
+    await execute(
+      removeTask(taskId),
+      () => archiveTask(taskId, token),
+      {
+        errorMessage: "Không thể lưu trữ task",
+        onSuccess: () => toast.success("Đã chuyển vào kho lưu trữ"),
+        onError: () => {
+          wsArchivedRef.current.delete(taskIdStr);
+          setArchivedTasks((prev) =>
+            prev.filter((t) => String(t.id) !== taskIdStr)
+          );
+        },
+      }
+    );
+
+    unmarkPending(taskId);
   };
 
   const handleRestore = async (taskId) => {
-    try {
-      await restoreFromArchive(taskId, token);
-      toast.success("Đã khôi phục task");
-      onTaskUpdate?.();
-    } catch (error) {
-      toast.error("Không thể khôi phục task");
-    }
+    const task = archivedTasks.find((t) => String(t.id) === String(taskId));
+    if (!task) return;
+
+    const taskIdStr = String(taskId);
+    wsArchivedRef.current.delete(taskIdStr);
+    wsDeletedRef.current.delete(taskIdStr);
+    markPending(taskId);
+    markRecentOptimistic(taskId);
+
+    setArchivedTasks((prev) => prev.filter((t) => String(t.id) !== taskIdStr));
+
+    await execute(
+      (current) => {
+        const next = {
+          todo: [...current.todo],
+          doing: [...current.doing],
+          done: [...current.done],
+        };
+        for (const col of ["todo", "doing", "done"]) {
+          next[col] = next[col].filter((t) => String(t.id) !== taskIdStr);
+        }
+        const status = task.status || "todo";
+        if (next[status]) {
+          next[status].push({ ...task, isArchived: false, archivedAt: null });
+        }
+        return next;
+      },
+      () => restoreFromArchive(taskId, token),
+      {
+        errorMessage: "Không thể khôi phục task",
+        onSuccess: () => {
+          toast.success("Đã khôi phục task");
+          onTaskUpdate?.();
+        },
+        onError: () => {
+          wsArchivedRef.current.add(taskIdStr);
+          setArchivedTasks((prev) => [...prev, task]);
+        },
+      }
+    );
+
+    unmarkPending(taskId);
+  };
+
+  // ============================================================
+  // DRAG & DROP
+  // ============================================================
+  const handleDragStart = (event) => {
+    isDraggingRef.current = true;
+    setActiveId(event.active.id);
+    setIsDragging(true);
+    document.body.classList.add("dragging-active");
+  };
+
+  const handleDragCancel = () => {
+    isDraggingRef.current = false;
+    setActiveId(null);
+    setIsDragging(false);
+    setDragOverColumnId(null);
+    document.body.classList.remove("dragging-active");
   };
 
   const handleDragEnd = async (event) => {
     const { active, over } = event;
+
+    isDraggingRef.current = false;
     setActiveId(null);
     setIsDragging(false);
     setDragOverColumnId(null);
+    document.body.classList.remove("dragging-active");
 
     if (!over) return;
 
-    const activeId = String(active.id);
-    const overId = String(over.id);
+    const activeIdStr = String(active.id);
+    const overIdStr = String(over.id);
+
+    if (activeIdStr === overIdStr) return;
 
     let sourceColumn = null;
-    let destColumn = null;
     let sourceIndex = -1;
-    let destIndex = -1;
-
     for (const col of ["todo", "doing", "done"]) {
-      const idx = boardTasks[col].findIndex((t) => String(t.id) === activeId);
+      const idx = boardTasks[col].findIndex((t) => String(t.id) === activeIdStr);
       if (idx !== -1) {
         sourceColumn = col;
         sourceIndex = idx;
         break;
       }
     }
+    if (!sourceColumn) return;
 
-    if (overId.startsWith("column-")) {
-      destColumn = overId.replace("column-", "");
+    const draggedTask = boardTasks[sourceColumn][sourceIndex];
+    if (!draggedTask) return;
+
+    let destColumn = null;
+    let destIndex = -1;
+
+    if (overIdStr.startsWith("column-")) {
+      destColumn = overIdStr.replace("column-", "");
       destIndex = boardTasks[destColumn].length;
     } else {
       for (const col of ["todo", "doing", "done"]) {
-        const idx = boardTasks[col].findIndex((t) => String(t.id) === overId);
+        const idx = boardTasks[col].findIndex(
+          (t) => String(t.id) === overIdStr
+        );
         if (idx !== -1) {
           destColumn = col;
           destIndex = idx;
@@ -356,85 +860,156 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
         }
       }
     }
+    if (!destColumn) return;
 
-    if (!sourceColumn || !destColumn) return;
+    if (sourceColumn === destColumn && sourceIndex === destIndex) return;
 
-    const draggedTask = boardTasks[sourceColumn][sourceIndex];
-    if (!draggedTask) return;
-
-    const newBoardTasks = { ...boardTasks };
-    const [removed] = newBoardTasks[sourceColumn].splice(sourceIndex, 1);
+    markPending(draggedTask.id);
+    markRecentOptimistic(draggedTask.id);
 
     if (sourceColumn === destColumn) {
-      newBoardTasks[destColumn].splice(destIndex, 0, removed);
-    } else {
-      newBoardTasks[destColumn].splice(destIndex, 0, {
-        ...removed,
-        status: destColumn,
+      recentReorderRef.current.add(activeIdStr);
+
+      setBoardTasks((prev) => {
+        const next = { ...prev };
+        const list = [...next[sourceColumn]];
+        const [removed] = list.splice(sourceIndex, 1);
+        list.splice(destIndex, 0, removed);
+        next[sourceColumn] = list;
+        return next;
       });
-    }
 
-    setBoardTasks(newBoardTasks);
-
-    if (sourceColumn !== destColumn) {
       setLoading((prev) => ({ ...prev, [draggedTask.id]: true }));
+
       try {
-        await updateTask(draggedTask.id, { status: destColumn }, token);
-        toast.success(
-          `Đã chuyển task sang ${columns.find((c) => c.id === destColumn)?.title}`,
-        );
-
-        setOpenColumn(destColumn);
-
-        if (destColumn === "done") {
-          setCompletedTaskId(draggedTask.id);
-          setShowMoodPicker(true);
-        }
-
-        onTaskUpdate?.();
+        await updateTask(draggedTask.id, { order: destIndex }, token);
+        markRecentOptimistic(draggedTask.id);
+        setTimeout(() => {
+          recentReorderRef.current.delete(activeIdStr);
+        }, 5000);
       } catch (error) {
-        toast.error("Không thể cập nhật trạng thái task");
-        setBoardTasks(boardTasks);
+        setBoardTasks((prev) => {
+          const next = { ...prev };
+          const list = [...next[sourceColumn]];
+          const currentIdx = list.findIndex(
+            (t) => String(t.id) === activeIdStr
+          );
+          if (currentIdx !== -1) {
+            const [removed] = list.splice(currentIdx, 1);
+            list.splice(sourceIndex, 0, removed);
+            next[sourceColumn] = list;
+          }
+          return next;
+        });
+        toast.error("Không thể sắp xếp lại");
+        recentReorderRef.current.delete(activeIdStr);
       } finally {
+        unmarkPending(draggedTask.id);
         setLoading((prev) => ({ ...prev, [draggedTask.id]: false }));
       }
+
+      return;
+    }
+
+    setLoading((prev) => ({ ...prev, [draggedTask.id]: true }));
+
+    setBoardTasks((prev) => {
+      const next = {
+        todo: [...prev.todo],
+        doing: [...prev.doing],
+        done: [...prev.done],
+      };
+      const [removed] = next[sourceColumn].splice(sourceIndex, 1);
+      const updated = { ...removed, status: destColumn };
+      next[destColumn].splice(destIndex, 0, updated);
+      return next;
+    });
+
+    try {
+      await updateTask(
+        draggedTask.id,
+        { status: destColumn, order: destIndex },
+        token
+      );
+
+      toast.success(
+        `Đã chuyển sang ${columns.find((c) => c.id === destColumn)?.title}`
+      );
+      setOpenColumn(destColumn);
+      if (destColumn === "done") {
+        setCompletedTaskId(draggedTask.id);
+        setShowMoodPicker(true);
+      }
+
+      markRecentOptimistic(draggedTask.id);
+    } catch (error) {
+      setBoardTasks((prev) => {
+        const next = {
+          todo: [...prev.todo],
+          doing: [...prev.doing],
+          done: [...prev.done],
+        };
+        const idx = next[destColumn].findIndex(
+          (t) => String(t.id) === activeIdStr
+        );
+        if (idx !== -1) {
+          const [removed] = next[destColumn].splice(idx, 1);
+          const reverted = { ...removed, status: sourceColumn };
+          next[sourceColumn].splice(sourceIndex, 0, reverted);
+        }
+        return next;
+      });
+      toast.error("Không thể cập nhật trạng thái task");
+    } finally {
+      unmarkPending(draggedTask.id);
+      setLoading((prev) => ({ ...prev, [draggedTask.id]: false }));
     }
   };
 
-  const TaskCardContent = ({ task }) => {
+  // ============================================================
+  // ✅ TASK CARD CONTENT — FIX MOBILE ACTIONS
+  // ============================================================
+  const TaskCardContent = ({ task, isGhost = false }) => {
     const isEditing = editingTask === task.id;
     const isTaskLoading = loading[task.id];
+    const isTaskPending = isPending(task.id);
     const isTodo = task.status === "todo";
     const isDoing = task.status === "doing";
     const isDone = task.status === "done";
 
     return (
-      <div className="bg-white rounded-lg shadow-sm mb-3 relative">
-        {isTaskLoading && (
-          <div className="absolute right-2 top-2">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+      <div
+        className={`group bg-white rounded-md shadow-sm relative transition-all duration-150 hover:shadow-md border border-gray-200 ${
+          isTaskPending ? "opacity-70 ring-1 ring-blue-300" : ""
+        } ${isGhost ? "ring-2 ring-blue-400" : ""}`}
+      >
+        {!isGhost && <PendingOverlay show={isTaskPending} />}
+        {isTaskLoading && !isTaskPending && !isGhost && (
+          <div className="absolute right-1.5 top-1.5 z-10">
+            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
           </div>
         )}
-        <div className="p-3">
+
+        <div className="p-2">
           {isEditing ? (
-            <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+            <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
               <input
                 type="text"
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                className="w-full border border-blue-500 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-blue-500 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                 placeholder="Tiêu đề task"
               />
               <textarea
                 value={editDesc}
                 onChange={(e) => setEditDesc(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                 rows="2"
                 placeholder="Mô tả task"
               />
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">
+                  <label className="block text-[10px] text-gray-500 mb-0.5">
                     Hạn chót
                   </label>
                   <input
@@ -442,102 +1017,114 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                     value={editDueDate}
                     onChange={(e) => setEditDueDate(e.target.value)}
                     min={getTodayDate()}
-                    className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 rounded-md px-1.5 py-1 text-xs"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Độ ưu tiên
+                  <label className="block text-[10px] text-gray-500 mb-0.5">
+                    Ưu tiên
                   </label>
                   <select
                     value={editPriority}
                     onChange={(e) => setEditPriority(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 rounded-md px-1.5 py-1 text-xs"
                   >
-                    <option value="low">🟢 Thấp</option>
-                    <option value="medium">🟡 Trung bình</option>
-                    <option value="high">🔴 Cao</option>
+                    <option value="low">Thấp</option>
+                    <option value="medium">Trung bình</option>
+                    <option value="high">Cao</option>
                   </select>
                 </div>
               </div>
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-1.5 pt-1">
                 <button
                   onClick={() => saveEdit(task.id)}
-                  className="flex-1 px-3 py-1 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600 transition"
+                  className="flex-1 px-2 py-1 bg-green-500 text-white rounded-md text-xs hover:bg-green-600"
                 >
-                  ✅ Lưu
+                  Lưu
                 </button>
                 <button
                   onClick={cancelEdit}
-                  className="flex-1 px-3 py-1 bg-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-400 transition"
+                  className="flex-1 px-2 py-1 bg-gray-300 text-gray-700 rounded-md text-xs hover:bg-gray-400"
                 >
-                  ❌ Hủy
+                  Hủy
                 </button>
               </div>
             </div>
           ) : (
             <>
               <h4
-                className={`font-semibold text-gray-800 mb-1 text-sm line-clamp-2 ${
+                className={`font-medium text-gray-800 mb-1 text-[13px] leading-snug line-clamp-2 pr-6 ${
                   isDone ? "line-through text-gray-400" : ""
                 }`}
               >
                 {task.title}
               </h4>
-              <p
-                className={`text-xs text-gray-500 mb-2 line-clamp-2 ${
-                  isDone ? "text-gray-400" : ""
-                }`}
-              >
-                {task.description || "📝 Không có mô tả"}
-              </p>
 
-              {/* Hiển thị người được gán */}
-              {task.assignedTo && (
-                <div className="flex flex-wrap items-center gap-1 mt-1">
-                  {task.assignedTo === currentUserId ? (
-                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
-                      📨 Giao cho tôi
-                    </span>
-                  ) : (
-                    <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">
-                      👤 Giao cho: {task.assignedByName || "Thành viên"}
-                    </span>
-                  )}
-                </div>
+              {task.description && (
+                <p
+                  className={`text-[11px] text-gray-500 mb-1.5 line-clamp-2 leading-snug ${
+                    isDone ? "text-gray-400" : ""
+                  }`}
+                >
+                  {task.description}
+                </p>
               )}
 
-              {/* Badge người tạo */}
-              {task.userId === currentUserId && !task.assignedTo && (
-                <div className="flex flex-wrap items-center gap-1 mt-1">
-                  <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
-                    📝 Tôi tạo
+              <div className="flex flex-wrap items-center gap-1">
+                {task.assignedTo && (
+                  <>
+                    {task.assignedTo === currentUserId ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">
+                        <IconUser className="w-3 h-3" />
+                        Tôi
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium truncate max-w-[80px]">
+                        <IconUser className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">
+                          {task.assignedByName || "TV"}
+                        </span>
+                      </span>
+                    )}
+                  </>
+                )}
+
+                {task.userId === currentUserId && !task.assignedTo && (
+                  <span className="inline-flex items-center gap-1 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">
+                    <IconUser className="w-3 h-3" />
+                    Tôi tạo
                   </span>
-                </div>
-              )}
+                )}
+
+                {getPriorityBadge(task.priority)}
+
+                {task.dueDate && !isDone && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-500">
+                    <IconCalendar className="w-3 h-3" />
+                    {new Date(task.dueDate).toLocaleDateString("vi-VN", {
+                      day: "2-digit",
+                      month: "2-digit",
+                    })}
+                  </span>
+                )}
+
+                {getDueDateWarning(task.dueDate, task.status)}
+              </div>
             </>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
-            <div className="flex gap-2">{getPriorityBadge(task.priority)}</div>
-            <div className="flex items-center gap-2">
-              {task.dueDate && !isDone && (
-                <span className="text-xs text-gray-500">
-                  📅 {new Date(task.dueDate).toLocaleDateString("vi-VN")}
-                </span>
-              )}
-              {getDueDateWarning(task.dueDate, task.status)}
-            </div>
-          </div>
         </div>
-        {!isEditing && (
-          <div className="flex border-t border-gray-100 flex-wrap">
-            {/* Nút Sửa - hiển thị cho task chưa hoàn thành */}
+
+        {/* ✅ ACTIONS — Luôn hiện trên mobile, hover trên desktop */}
+        {!isEditing && !isGhost && (
+          <div className="flex border-t border-gray-100 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
             {!isDone && (
               <button
                 onClick={() => openEditModal(task)}
-                className="flex-1 py-2 text-yellow-600 hover:bg-yellow-50 text-sm flex items-center justify-center gap-1"
+                disabled={isTaskPending}
+                className="flex-1 py-2 md:py-1.5 text-gray-500 hover:bg-gray-50 hover:text-yellow-600 text-xs flex items-center justify-center disabled:opacity-50 transition-colors"
+                title="Sửa"
               >
-                ✏️ Sửa
+                <IconEdit className="w-4 h-4 md:w-3.5 md:h-3.5" />
               </button>
             )}
 
@@ -547,41 +1134,44 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                   setSelectedTaskForAssign(task);
                   setShowAssignModal(true);
                 }}
-                className="flex-1 py-2 text-blue-600 hover:bg-blue-50 text-sm flex items-center justify-center gap-1 border-l border-gray-100"
+                disabled={isTaskPending}
+                className="flex-1 py-2 md:py-1.5 text-gray-500 hover:bg-gray-50 hover:text-blue-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
+                title="Giao cho"
               >
-                👤 Giao cho
+                <IconUser className="w-4 h-4 md:w-3.5 md:h-3.5" />
               </button>
             )}
 
-            {/* Nút Lưu trữ - CHỈ hiển thị ở DOING và DONE (bỏ ở TODO) */}
             {!isTodo && !task.isArchived && (
               <button
                 onClick={() => handleArchive(task.id)}
-                className={`flex-1 py-2 text-purple-600 hover:bg-purple-50 text-sm flex items-center justify-center gap-1 ${
-                  !isDone ? "border-l border-gray-100" : ""
-                }`}
+                disabled={isTaskPending}
+                className="flex-1 py-2 md:py-1.5 text-gray-500 hover:bg-gray-50 hover:text-purple-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
+                title="Lưu trữ"
               >
-                📦 Lưu trữ
+                <IconArchive className="w-4 h-4 md:w-3.5 md:h-3.5" />
               </button>
             )}
 
-            {/* Nút Xóa - CHỈ hiển thị ở TODO và DONE (bỏ ở DOING) */}
             {!isDoing && (
               <button
                 onClick={() => handleSoftDelete(task.id)}
-                className="flex-1 py-2 text-orange-600 hover:bg-orange-50 text-sm flex items-center justify-center gap-1 border-l border-gray-100"
+                disabled={isTaskPending}
+                className="flex-1 py-2 md:py-1.5 text-gray-500 hover:bg-gray-50 hover:text-red-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
+                title="Xóa"
               >
-                🗑️ Xóa
+                <IconTrash className="w-4 h-4 md:w-3.5 md:h-3.5" />
               </button>
             )}
 
-            {/* Nút Timer - CHỈ hiển thị ở DOING */}
             {isDoing && !isDone && (
               <button
                 onClick={() => openTimer(task)}
-                className="flex-1 py-2 text-blue-600 hover:bg-blue-50 text-sm flex items-center justify-center gap-1 border-l border-gray-100"
+                disabled={isTaskPending}
+                className="flex-1 py-2 md:py-1.5 text-gray-500 hover:bg-gray-50 hover:text-blue-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
+                title="Timer"
               >
-                ⏱️ Timer
+                <IconClock className="w-4 h-4 md:w-3.5 md:h-3.5" />
               </button>
             )}
           </div>
@@ -590,61 +1180,134 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
     );
   };
 
+  // ============================================================
+  // DESKTOP COLUMN
+  // ============================================================
   const DesktopColumnContent = ({ columnId, tasks }) => {
-    const { setNodeRef } = useDroppable({
-      id: `column-${columnId}`,
+    const { setNodeRef } = useDroppable({ id: `column-${columnId}` });
+    const column = columns.find((c) => c.id === columnId);
+    const ColumnIcon = column?.Icon || IconCircle;
+    const isCollapsed = collapsed[columnId];
+
+    const scrollRef = useRef(null);
+
+    useLayoutEffect(() => {
+      if (!scrollRef.current) return;
+      const saved = scrollPositionsRef.current[columnId] || 0;
+      if (saved > 0 && Math.abs(scrollRef.current.scrollTop - saved) > 1) {
+        scrollRef.current.scrollTop = saved;
+      }
     });
 
-    const column = columns.find((c) => c.id === columnId);
-    const icon =
-      columnId === "todo" ? "📋" : columnId === "doing" ? "🔄" : "✅";
+    const handleScroll = (e) => {
+      scrollPositionsRef.current[columnId] = e.currentTarget.scrollTop;
+    };
+
+    if (isCollapsed) {
+      return (
+        <div
+          className={`${column?.color} rounded-lg h-full w-10 flex flex-col items-center py-2 cursor-pointer transition hover:shadow-md`}
+          onClick={() =>
+            setCollapsed((prev) => ({ ...prev, [columnId]: false }))
+          }
+          title="Click để mở rộng"
+        >
+          <button className={`${column?.headerColor} text-white p-1.5 rounded`}>
+            <ColumnIcon className="w-4 h-4" />
+          </button>
+          <span
+            className="mt-2 text-xs font-semibold text-gray-700"
+            style={{ writingMode: "vertical-rl" }}
+          >
+            {column?.title} ({tasks.length})
+          </span>
+        </div>
+      );
+    }
 
     return (
       <div
-        ref={setNodeRef}
-        className={`${column?.color} rounded-xl p-4 flex flex-col`}
+        className={`${column?.color} rounded-lg flex flex-col h-full overflow-hidden`}
       >
         <div
-          className={`${column?.headerColor} text-white p-3 rounded-lg mb-4 flex justify-between items-center flex-shrink-0`}
+          className={`${column?.headerColor} text-white px-2.5 py-1.5 flex justify-between items-center flex-shrink-0 rounded-t-lg`}
         >
-          <h3 className="font-semibold">
-            {icon} {column?.title}
+          <h3 className="font-semibold text-xs flex items-center gap-1.5">
+            <ColumnIcon className="w-3.5 h-3.5" />
+            {column?.title}
+            <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-[10px] font-medium">
+              {tasks.length}
+            </span>
           </h3>
-          <span className="bg-white/20 px-2 py-0.5 rounded-full text-sm">
-            {tasks.length}
-          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setCollapsed((prev) => ({ ...prev, [columnId]: true }));
+            }}
+            className="text-white/70 hover:text-white transition p-0.5 rounded hover:bg-white/10"
+            title="Thu gọn cột"
+          >
+            <IconChevronLeft className="w-3.5 h-3.5" />
+          </button>
         </div>
-        <SortableContext
-          items={tasks.map((t) => String(t.id))}
-          strategy={verticalListSortingStrategy}
+
+        <div
+          ref={(node) => {
+            setNodeRef(node);
+            scrollRef.current = node;
+          }}
+          onScroll={handleScroll}
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-1.5 scrollbar-thin"
+          style={{ touchAction: "pan-y" }}
         >
-          <div className="flex-1 rounded-lg p-2 space-y-2">
-            {tasks.map((task) => (
-              <SortableTaskCard key={task.id} task={task}>
-                <TaskCardContent task={task} />
-              </SortableTaskCard>
-            ))}
-            {tasks.length === 0 && (
-              <div className="text-center text-gray-400 text-sm py-8 border-2 border-dashed border-gray-300 rounded-lg">
-                📌 Kéo task vào đây
-              </div>
-            )}
+          <SortableContext
+            items={tasks.map((t) => String(t.id))}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-1.5">
+              {tasks.map((task) => (
+                <SortableTaskCard
+                  key={String(task.id)}
+                  task={task}
+                  isPending={isPending(task.id)}
+                >
+                  <TaskCardContent task={task} />
+                </SortableTaskCard>
+              ))}
+              {tasks.length === 0 && (
+                <div className="text-center text-gray-400 text-[11px] py-4 border border-dashed border-gray-300 rounded-md bg-white/30">
+                  Kéo task vào đây
+                </div>
+              )}
+            </div>
+          </SortableContext>
+        </div>
+
+        {columnId === "todo" && (
+          <div className="flex-shrink-0 p-1.5 border-t border-gray-200/50 bg-white/30">
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent("openCreateTaskModal"));
+              }}
+              className="w-full text-left text-xs text-gray-500 hover:text-gray-700 hover:bg-white/70 rounded-md p-1.5 transition flex items-center gap-1.5"
+            >
+              <IconPlus className="w-3.5 h-3.5" />
+              Thêm task
+            </button>
           </div>
-        </SortableContext>
+        )}
       </div>
     );
   };
 
-  // Mobile Droppable Column Component
+  // ============================================================
+  // MOBILE DROPPABLE
+  // ============================================================
   const MobileDroppableColumn = ({ columnId, children }) => {
-    const { setNodeRef, isOver } = useDroppable({
-      id: `column-${columnId}`,
-    });
+    const { setNodeRef, isOver } = useDroppable({ id: `column-${columnId}` });
 
     useEffect(() => {
-      if (isOver) {
-        setDragOverColumnId(columnId);
-      }
+      if (isOver) setDragOverColumnId(columnId);
     }, [isOver, columnId]);
 
     return (
@@ -653,56 +1316,90 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
         className={`transition-all duration-200 rounded-lg ${
           isOver ? "bg-blue-100 ring-2 ring-blue-500" : ""
         }`}
-        style={{ minHeight: "100px" }}
+        style={{ minHeight: "80px", touchAction: "pan-y" }}
       >
         {children}
       </div>
     );
   };
 
-  // Mobile View
+  // ============================================================
+  // GHOST CARD
+  // ============================================================
+  const renderGhostCard = (taskId, isMobileView = false) => {
+    let task = null;
+    for (const col of ["todo", "doing", "done"]) {
+      const found = boardTasks[col].find((t) => String(t.id) === taskId);
+      if (found) {
+        task = found;
+        break;
+      }
+    }
+    if (!task) return null;
+
+    return (
+      <div
+        className={`rotate-2 scale-105 shadow-2xl ${
+          isMobileView ? "w-[80vw] max-w-[280px]" : "w-[280px]"
+        }`}
+        style={{ transformOrigin: "center center" }}
+      >
+        <TaskCardContent task={task} isGhost={true} />
+      </div>
+    );
+  };
+
+  // ============================================================
+  // MOBILE VIEW
+  // ============================================================
   if (isMobile) {
     return (
       <>
-        <div className="space-y-4 pb-20">
+        <div
+          className="space-y-3 pb-20"
+          style={{
+            touchAction: "pan-y",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
           <button
             onClick={() => setShowArchived(!showArchived)}
-            className="w-full bg-purple-100 text-purple-700 p-3 rounded-lg flex justify-between items-center"
+            className="w-full bg-purple-100 text-purple-700 p-2.5 rounded-lg flex justify-between items-center text-xs font-medium"
           >
-            <span>📦 Kho lưu trữ ({archivedTasks.length})</span>
-            <svg
-              className={`w-5 h-5 transition-transform ${showArchived ? "rotate-180" : ""}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 9l-7 7-7-7"
-              />
-            </svg>
+            <span className="inline-flex items-center gap-1.5">
+              <IconPackage className="w-4 h-4" />
+              Kho lưu trữ ({archivedTasks.length})
+            </span>
+            <IconChevronDown
+              className={`w-4 h-4 transition-transform ${
+                showArchived ? "rotate-180" : ""
+              }`}
+            />
           </button>
 
           {showArchived && archivedTasks.length > 0 && (
-            <div className="bg-purple-50 rounded-xl p-3">
-              {archivedTasks.map((task) => (
+            <div className="bg-purple-50 rounded-lg p-2">
+              {dedupById(archivedTasks).map((task) => (
                 <div
-                  key={task.id}
-                  className="bg-white rounded-lg shadow-sm p-3 mb-2"
+                  key={String(task.id)}
+                  className="bg-white rounded-md shadow-sm p-2 mb-1.5 relative"
                 >
-                  <h4 className="font-semibold text-gray-800">{task.title}</h4>
-                  <p className="text-xs text-gray-500">
-                    {task.description || "📝 Không có mô tả"}
+                  <PendingOverlay show={isPending(task.id)} />
+                  <h4 className="font-medium text-gray-800 text-xs">
+                    {task.title}
+                  </h4>
+                  <p className="text-[10px] text-gray-500">
+                    {task.description || "Không có mô tả"}
                   </p>
-                  <div className="flex justify-between items-center mt-2">
+                  <div className="flex justify-between items-center mt-1.5">
                     {getPriorityBadge(task.priority)}
                     <button
                       onClick={() => handleRestore(task.id)}
-                      className="text-sm text-green-600 hover:text-green-700"
+                      disabled={isPending(task.id)}
+                      className="text-xs text-green-600 hover:text-green-700 disabled:opacity-50 inline-flex items-center gap-1"
                     >
-                      🔄 Khôi phục
+                      <IconRefresh className="w-3 h-3" />
+                      Khôi phục
                     </button>
                   </div>
                 </div>
@@ -712,88 +1409,72 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
 
           <DndContext
             sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={(event) => {
-              setIsDragging(true);
-              setActiveId(event.active.id);
-            }}
+            collisionDetection={closestCorners}
+            onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
-            onDragCancel={() => {
-              setIsDragging(false);
-              setDragOverColumnId(null);
-            }}
+            onDragCancel={handleDragCancel}
           >
             {columns.map((column) => {
-              const icon =
-                column.id === "todo"
-                  ? "📋"
-                  : column.id === "doing"
-                    ? "🔄"
-                    : "✅";
+              const ColumnIcon = column.Icon;
               const shouldShowContent = isDragging || openColumn === column.id;
 
               return (
                 <div
                   key={column.id}
-                  className={`${column.color} rounded-xl overflow-hidden mb-4 transition-all duration-200 ${
+                  className={`${column.color} rounded-lg overflow-hidden mb-2 transition-all duration-200 ${
                     dragOverColumnId === column.id
                       ? "ring-2 ring-blue-500 shadow-lg"
                       : ""
                   }`}
+                  style={{ touchAction: "pan-y" }}
                 >
                   <button
                     onClick={() => {
                       if (!isDragging) {
                         setOpenColumn(
-                          openColumn === column.id ? null : column.id,
+                          openColumn === column.id ? null : column.id
                         );
                       }
                     }}
-                    className={`w-full ${column.headerColor} text-white p-4 flex justify-between items-center`}
+                    className={`w-full ${column.headerColor} text-white px-3 py-2 flex justify-between items-center`}
                   >
-                    <span className="font-semibold text-base">
-                      <span className="text-xl mr-1">{icon}</span>
+                    <span className="font-semibold text-xs inline-flex items-center gap-1.5">
+                      <ColumnIcon className="w-3.5 h-3.5" />
                       {column.title}
                     </span>
-                    <div className="flex items-center gap-3">
-                      <span className="bg-white/20 px-2 py-0.5 rounded-full text-sm font-medium">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-[10px] font-medium">
                         {boardTasks[column.id].length}
                       </span>
                       {!isDragging && (
-                        <svg
-                          className={`w-5 h-5 transition-transform duration-200 ${
+                        <IconChevronDown
+                          className={`w-4 h-4 transition-transform duration-200 ${
                             openColumn === column.id ? "rotate-180" : ""
                           }`}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 9l-7 7-7-7"
-                          />
-                        </svg>
+                        />
                       )}
                     </div>
                   </button>
 
                   {shouldShowContent && (
-                    <div className="p-3">
+                    <div className="p-2" style={{ touchAction: "pan-y" }}>
                       <MobileDroppableColumn columnId={column.id}>
                         <SortableContext
                           items={boardTasks[column.id].map((t) => String(t.id))}
                           strategy={verticalListSortingStrategy}
                         >
-                          <div className="space-y-2">
+                          <div className="space-y-1.5">
                             {boardTasks[column.id].length === 0 && (
-                              <div className="text-center text-gray-400 text-sm py-6 border-2 border-dashed border-gray-300 rounded-lg bg-white/50">
-                                📌 Kéo task vào đây
+                              <div className="text-center text-gray-400 text-[11px] py-4 border border-dashed border-gray-300 rounded-md bg-white/50">
+                                Kéo task vào đây
                               </div>
                             )}
                             {boardTasks[column.id].map((task) => (
-                              <SortableTaskCard key={task.id} task={task}>
+                              <SortableTaskCard
+                                key={String(task.id)}
+                                task={task}
+                                isPending={isPending(task.id)}
+                              >
                                 <TaskCardContent task={task} />
                               </SortableTaskCard>
                             ))}
@@ -806,39 +1487,13 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
               );
             })}
 
-            <DragOverlay>
-              {activeId ? (
-                <div className="bg-white rounded-xl shadow-2xl p-4 opacity-95 cursor-grabbing w-[85vw] border-2 border-blue-400">
-                  {(() => {
-                    let task = null;
-                    for (const col of ["todo", "doing", "done"]) {
-                      const found = boardTasks[col].find(
-                        (t) => String(t.id) === activeId,
-                      );
-                      if (found) {
-                        task = found;
-                        break;
-                      }
-                    }
-                    if (task) {
-                      return (
-                        <div>
-                          <h4 className="font-semibold text-gray-800 text-base">
-                            {task.title}
-                          </h4>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {task.description || "📝 Không có mô tả"}
-                          </p>
-                          <div className="mt-2">
-                            {getPriorityBadge(task.priority)}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                </div>
-              ) : null}
+            <DragOverlay
+              dropAnimation={{
+                duration: 250,
+                easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)",
+              }}
+            >
+              {activeId ? renderGhostCard(activeId, true) : null}
             </DragOverlay>
           </DndContext>
         </div>
@@ -875,85 +1530,56 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
           />
         )}
 
-        {/* Modal gán task mobile */}
         {showAssignModal && selectedTaskForAssign && (
           <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4">
             <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-              <div className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-gray-800">
-                    👤 Gán task cho thành viên
+              <div className="p-5">
+                <div className="flex justify-between items-center mb-3">
+                  <h2 className="text-base font-bold text-gray-800 inline-flex items-center gap-2">
+                    <IconUser className="w-4 h-4" />
+                    Gán task
                   </h2>
                   <button
                     onClick={() => setShowAssignModal(false)}
                     className="text-gray-400 hover:text-gray-600"
                   >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
+                    <IconX className="w-4 h-4" />
                   </button>
                 </div>
 
-                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-500">Task được gán</p>
-                  <p className="font-medium text-gray-800">
-                    {selectedTaskForAssign.title}
-                  </p>
+                <div className="space-y-2 max-h-60 overflow-y-auto scrollbar-thin">
+                  {boardMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      onClick={() =>
+                        handleAssignTask(
+                          selectedTaskForAssign.id,
+                          member.id,
+                          member.name
+                        )
+                      }
+                      disabled={assigning}
+                      className="w-full text-left p-2 rounded-lg hover:bg-gray-50 transition flex items-center gap-2 border text-xs disabled:opacity-50"
+                    >
+                      <div className="w-6 h-6 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full flex items-center justify-center text-white text-[10px] font-semibold">
+                        {member.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-800">
+                          {member.name}
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          {member.email}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
                 </div>
 
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {loadingMembers ? (
-                    <p className="text-center text-gray-500 py-4">
-                      Đang tải...
-                    </p>
-                  ) : boardMembers.length === 0 ? (
-                    <p className="text-center text-gray-500 py-4">
-                      Chưa có thành viên nào trong board
-                    </p>
-                  ) : (
-                    boardMembers.map((member) => (
-                      <button
-                        key={member.id}
-                        onClick={() =>
-                          handleAssignTask(
-                            selectedTaskForAssign.id,
-                            member.id,
-                            member.name,
-                          )
-                        }
-                        disabled={assigning}
-                        className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition flex items-center gap-3 border"
-                      >
-                        <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                          {member.name?.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-800">
-                            {member.name}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {member.email}
-                          </p>
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-
-                <div className="flex gap-3 mt-6">
+                <div className="flex gap-2 mt-4">
                   <button
                     onClick={() => setShowAssignModal(false)}
-                    className="flex-1 px-4 py-2 bg-gray-200 rounded-lg"
+                    className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-xs"
                   >
                     Hủy
                   </button>
@@ -966,44 +1592,49 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
     );
   }
 
-  // Desktop View
+  // ============================================================
+  // DESKTOP VIEW
+  // ============================================================
   return (
-    <div>
-      <div className="mb-6 flex justify-end">
+    <div className="h-full flex flex-col min-h-0">
+      <div className="mb-2 flex justify-between items-center flex-shrink-0">
+        <div className="text-xs text-gray-500 inline-flex items-center gap-1.5">
+          <IconListChecks className="w-3.5 h-3.5" />
+          {boardTasks.todo.length +
+            boardTasks.doing.length +
+            boardTasks.done.length}{" "}
+          task đang hoạt động
+        </div>
         <button
           onClick={() => setShowArchived(!showArchived)}
-          className={`px-4 py-2 rounded-lg transition flex items-center gap-2 ${
+          className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 text-xs font-medium ${
             showArchived
-              ? "bg-purple-500 text-white shadow-md"
+              ? "bg-purple-500 text-white shadow-sm"
               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
-          📦 Kho lưu trữ ({archivedTasks.length})
-          <svg
-            className={`w-5 h-5 transition-transform ${showArchived ? "rotate-180" : ""}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
+          <IconPackage className="w-3.5 h-3.5" />
+          Kho lưu trữ ({archivedTasks.length})
         </button>
       </div>
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={(event) => setActiveId(event.active.id)}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
       >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div
+          className="grid gap-3 flex-1 min-h-0 justify-center"
+          style={{
+            gridTemplateColumns: columns
+              .map((c) => (collapsed[c.id] ? "40px" : "minmax(280px, 340px)"))
+              .join(" "),
+          }}
+        >
           {columns.map((column) => (
-            <div key={column.id}>
+            <div key={column.id} className="min-h-0 h-full">
               <DesktopColumnContent
                 columnId={column.id}
                 tasks={boardTasks[column.id]}
@@ -1011,64 +1642,46 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
             </div>
           ))}
         </div>
-        <DragOverlay>
-          {activeId ? (
-            <div className="bg-white rounded-lg shadow-lg p-3 opacity-90 cursor-grabbing">
-              {(() => {
-                let task = null;
-                for (const col of ["todo", "doing", "done"]) {
-                  const found = boardTasks[col].find(
-                    (t) => String(t.id) === activeId,
-                  );
-                  if (found) {
-                    task = found;
-                    break;
-                  }
-                }
-                if (task) {
-                  return (
-                    <div>
-                      <h4 className="font-semibold text-gray-800 text-sm">
-                        {task.title}
-                      </h4>
-                      <p className="text-xs text-gray-500">
-                        {task.description || "📝 Không có mô tả"}
-                      </p>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-            </div>
-          ) : null}
+
+        <DragOverlay
+          dropAnimation={{
+            duration: 250,
+            easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)",
+          }}
+        >
+          {activeId ? renderGhostCard(activeId, false) : null}
         </DragOverlay>
       </DndContext>
 
       {showArchived && archivedTasks.length > 0 && (
-        <div className="mt-8">
-          <div className="bg-purple-50 rounded-xl p-4">
-            <h3 className="text-lg font-semibold text-purple-800 mb-4">
-              📦 Kho lưu trữ ({archivedTasks.length} task)
+        <div className="mt-3 flex-shrink-0 max-h-[25vh] overflow-y-auto scrollbar-thin">
+          <div className="bg-purple-50 rounded-lg p-3">
+            <h3 className="text-sm font-semibold text-purple-800 mb-2 inline-flex items-center gap-1.5">
+              <IconPackage className="w-4 h-4" />
+              Kho lưu trữ ({archivedTasks.length} task)
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {archivedTasks.map((task) => (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+              {dedupById(archivedTasks).map((task) => (
                 <div
-                  key={task.id}
-                  className="bg-white rounded-lg shadow-sm p-3"
+                  key={String(task.id)}
+                  className="bg-white rounded-md shadow-sm p-2 relative"
                 >
-                  <h4 className="font-semibold text-gray-800 mb-1">
+                  <PendingOverlay show={isPending(task.id)} />
+                  <h4 className="font-medium text-gray-800 mb-0.5 text-xs">
                     {task.title}
                   </h4>
-                  <p className="text-xs text-gray-500 mb-2">
-                    {task.description || "📝 Không có mô tả"}
+                  <p className="text-[10px] text-gray-500 mb-1.5 line-clamp-1">
+                    {task.description || "Không có mô tả"}
                   </p>
                   <div className="flex justify-between items-center">
                     {getPriorityBadge(task.priority)}
                     <button
                       onClick={() => handleRestore(task.id)}
-                      className="text-sm text-green-600 hover:text-green-700"
+                      disabled={isPending(task.id)}
+                      className="text-gray-400 hover:text-green-600 disabled:opacity-50"
+                      title="Khôi phục"
                     >
-                      🔄 Khôi phục
+                      <IconRefresh className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -1110,48 +1723,38 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
         />
       )}
 
-      {/* Modal gán task desktop */}
       {showAssignModal && selectedTaskForAssign && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-gray-800">
-                  👤 Gán task cho thành viên
+            <div className="p-5">
+              <div className="flex justify-between items-center mb-3">
+                <h2 className="text-base font-bold text-gray-800 inline-flex items-center gap-2">
+                  <IconUser className="w-4 h-4" />
+                  Gán task cho thành viên
                 </h2>
                 <button
                   onClick={() => setShowAssignModal(false)}
                   className="text-gray-400 hover:text-gray-600"
                 >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
+                  <IconX className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-500">Task được gán</p>
-                <p className="font-medium text-gray-800">
+              <div className="mb-3 p-2 bg-gray-50 rounded-md">
+                <p className="text-[10px] text-gray-500">Task</p>
+                <p className="font-medium text-gray-800 text-sm">
                   {selectedTaskForAssign.title}
                 </p>
               </div>
 
-              <div className="space-y-2 max-h-60 overflow-y-auto">
+              <div className="space-y-1.5 max-h-60 overflow-y-auto scrollbar-thin">
                 {loadingMembers ? (
-                  <p className="text-center text-gray-500 py-4">Đang tải...</p>
+                  <p className="text-center text-gray-500 py-3 text-xs">
+                    Đang tải...
+                  </p>
                 ) : boardMembers.length === 0 ? (
-                  <p className="text-center text-gray-500 py-4">
-                    Chưa có thành viên nào trong board
+                  <p className="text-center text-gray-500 py-3 text-xs">
+                    Chưa có thành viên nào
                   </p>
                 ) : (
                   boardMembers.map((member) => (
@@ -1161,30 +1764,32 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                         handleAssignTask(
                           selectedTaskForAssign.id,
                           member.id,
-                          member.name,
+                          member.name
                         )
                       }
                       disabled={assigning}
-                      className="w-full text-left p-3 rounded-lg hover:bg-gray-50 transition flex items-center gap-3 border"
+                      className="w-full text-left p-2 rounded-lg hover:bg-gray-50 transition flex items-center gap-2 border text-xs disabled:opacity-50"
                     >
-                      <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                      <div className="w-7 h-7 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full flex items-center justify-center text-white text-[11px] font-semibold">
                         {member.name?.charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <p className="font-medium text-gray-800">
                           {member.name}
                         </p>
-                        <p className="text-sm text-gray-500">{member.email}</p>
+                        <p className="text-[10px] text-gray-500">
+                          {member.email}
+                        </p>
                       </div>
                     </button>
                   ))
                 )}
               </div>
 
-              <div className="flex gap-3 mt-6">
+              <div className="flex gap-2 mt-4">
                 <button
                   onClick={() => setShowAssignModal(false)}
-                  className="flex-1 px-4 py-2 bg-gray-200 rounded-lg"
+                  className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-xs hover:bg-gray-300"
                 >
                   Hủy
                 </button>

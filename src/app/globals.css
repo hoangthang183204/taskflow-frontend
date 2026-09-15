@@ -25,6 +25,9 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -45,47 +48,20 @@ body {
   }
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.3s ease-out;
-}
-
-.animate-fadeInUp {
-  animation: fadeInUp 0.5s ease-out forwards;
-  opacity: 0;
-}
-
-.accordion-content {
-  transition: all 0.3s ease-out;
-}
-
-.accordion-button {
-  transition: background-color 0.2s;
-}
-
-.sortable-task-card {
-  touch-action: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.sortable-task-card:active {
-  cursor: grabbing;
-}
-
-@media (max-width: 768px) {
-  .sortable-task-card {
-    touch-action: pan-y pinch-zoom; /* Cho phép cuộn dọc nhưng vẫn kéo được */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
   }
-  
-  /* Tăng kích thước vùng bắt sự kiện kéo */
-  [data-dnd-kit-sortable-handle] {
-    touch-action: manipulation;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-/* globals.css */
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     opacity: 1;
   }
@@ -95,12 +71,179 @@ body {
   }
 }
 
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+.animate-fadeInUp {
+  animation: fadeInUp 0.5s ease-out forwards;
+  opacity: 0;
+}
+.animate-slideUp {
+  animation: slideUp 0.3s ease-out;
+}
 .animate-pulse {
   animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+.shake {
+  animation: shake 0.3s ease-in-out;
+}
 
-/* Ngăn scroll khi kéo thả dnd-kit */
-body:has(.dragging) {
+/* ============================================================
+   ACCORDION
+   ============================================================ */
+.accordion-content {
+  transition: all 0.3s ease-out;
+}
+.accordion-button {
+  transition: background-color 0.2s;
+}
+
+/* ============================================================
+   ✅ SORTABLE TASK CARD
+   ============================================================ */
+.sortable-task-card {
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+  will-change: transform;
+}
+
+.sortable-task-card[data-dragging="true"] {
+  outline: 2px dashed rgba(59, 130, 246, 0.5);
+  outline-offset: -2px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.05);
+  transition: none !important;
+}
+
+.sortable-task-card[data-dragging="true"] > * {
+  visibility: hidden;
+}
+
+/* ============================================================
+   ✅ DRAG HANDLE
+   ============================================================ */
+.drag-handle {
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ✅ MOBILE: Handle luôn hiện, to hơn */
+@media (max-width: 768px) {
+  .drag-handle {
+    opacity: 1 !important;
+    padding: 8px !important;
+    border: 1px solid #d1d5db !important;
+    background: #ffffff !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+    border-radius: 8px !important;
+  }
+
+  .drag-handle:active {
+    background: #f3f4f6 !important;
+    transform: scale(0.95);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+  }
+
+  .drag-handle svg {
+    width: 20px !important;
+    height: 20px !important;
+    color: #374151 !important;
+  }
+}
+
+/* ✅ DESKTOP: Hiện khi hover */
+@media (min-width: 769px) {
+  .sortable-task-card:hover .drag-handle {
+    opacity: 1 !important;
+  }
+}
+
+/* ============================================================
+   ✅ DRAG OVERLAY
+   ============================================================ */
+[data-dnd-kit-drag-overlay] {
+  cursor: grabbing !important;
+  will-change: transform;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ============================================================
+   SCROLLBAR ĐẸP
+   ============================================================ */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:active {
+  background: rgba(156, 163, 175, 0.9);
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.4) transparent;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ============================================================
+   FIX SCROLL BEHAVIOR
+   ============================================================ */
+.overflow-y-auto {
+  scroll-behavior: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ============================================================
+   NGĂN SCROLL KHI KÉO THẢ
+   ============================================================ */
+body.dragging-active {
   overflow: hidden !important;
   position: fixed !important;
   width: 100% !important;
@@ -111,26 +254,144 @@ body:has(.dragging) {
   bottom: 0 !important;
 }
 
-/* Đảm bảo modal vẫn hoạt động */
-body:has(.dragging) .fixed {
-  position: fixed !important;
+/* ============================================================
+   3-LAYER SCROLL
+   ============================================================ */
+.min-h-0 {
+  min-height: 0;
 }
 
-/* Khôi phục khi kết thúc */
-body:has(.dragging) .kanban-board {
-  pointer-events: none;
+html,
+body {
+  overflow-x: hidden;
 }
 
-/* Fix scroll khi kéo thả */
-.overflow-y-auto {
-  scroll-behavior: auto !important;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Ngăn scroll body khi kéo */
-body.dragging-active {
+.board-layout {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  position: fixed;
-  width: 100%;
-  height: 100%;
+}
+
+/* ============================================================
+   LOADING SKELETON
+   ============================================================ */
+.skeleton {
+  background: linear-gradient(90deg, #f3f4f6 0%, #e5e7eb 50%, #f3f4f6 100%);
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite linear;
+}
+
+/* ============================================================
+   PRINT
+   ============================================================ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* ============================================================
+   ✅ MOBILE SCROLL FIX
+   ============================================================ */
+
+/* Cho phép scroll mượt trên mobile */
+@media (max-width: 768px) {
+  /* Wrapper chính cho mobile */
+  .mobile-scroll-container {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Đảm bảo mọi container đều cho phép scroll dọc */
+  body {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Cột Kanban cho phép scroll */
+  .sortable-task-card {
+    touch-action: pan-y;
+  }
+
+  /* Drag handle vẫn chặn scroll */
+  .drag-handle {
+    touch-action: none;
+  }
+}
+
+/* ✅ Đảm bảo main cho scroll */
+@media (max-width: 767px) {
+  main {
+    overflow-y: auto !important;
+  }
+}
+
+/* ============================================================
+   ✅ TASK HIGHLIGHT — Khi click notification
+   ============================================================ */
+.task-highlighted {
+  animation: taskHighlight 2s ease-out;
+  position: relative;
+  z-index: 5;
+}
+
+@keyframes taskHighlight {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+    background-color: rgba(59, 130, 246, 0.15);
+  }
+  25% {
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.4);
+    background-color: rgba(59, 130, 246, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
+    background-color: rgba(59, 130, 246, 0.08);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    background-color: transparent;
+  }
+}
+
+/* ✅ Pulse ring */
+.task-highlight-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 10px;
+  border: 2px solid rgba(59, 130, 246, 0.6);
+  pointer-events: none;
+  animation: taskPulseRing 1s ease-out 2;
+}
+
+@keyframes taskPulseRing {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.05);
+    opacity: 0;
+  }
+}
+
+/* ✅ Flash đỏ cho task quá hạn */
+.task-highlighted.task-overdue {
+  animation: taskHighlightOverdue 2s ease-out;
+}
+
+@keyframes taskHighlightOverdue {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);
+    background-color: rgba(239, 68, 68, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
+    background-color: rgba(239, 68, 68, 0.08);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    background-color: transparent;
+  }
 }

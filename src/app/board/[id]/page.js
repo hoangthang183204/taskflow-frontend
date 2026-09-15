@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import SearchBar from "@/components/SearchBar";
 import DashboardStats from "@/components/DashboardStats";
 import TrashView from "@/components/TrashView";
 import NotificationBell from "@/components/NotificationBell";
+import EditTaskModal from "@/components/EditTaskModal";
 
 export default function BoardDetailPage() {
   const { id } = useParams();
@@ -45,6 +46,14 @@ export default function BoardDetailPage() {
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
 
+  // ✅ Task mở từ notification
+  const [openTaskFromNotif, setOpenTaskFromNotif] = useState(null);
+
+  // ✅ Số lượng task trong thùng rác
+  const [trashCount, setTrashCount] = useState(0);
+
+  const fetchTimeoutRef = useRef(null);
+
   useEffect(() => {
     if (!isAuthenticated && !token) {
       router.push("/login");
@@ -56,9 +65,40 @@ export default function BoardDetailPage() {
       fetchBoardInfo();
       fetchAllTasks();
       fetchBoardMembers();
+      fetchTrashCount(); // ✅ Fetch trash count khi load board
     }
   }, [token, id]);
 
+  // ✅ Cleanup debounce
+  useEffect(() => {
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // ✅ Lắng nghe event "clearFilters"
+  useEffect(() => {
+    const handleClearFilters = () => {
+      setSearchParams({
+        search: "",
+        status: "",
+        priority: "",
+        assignedTo: "",
+      });
+      setShowStats(false);
+      setShowTrash(false);
+      toast.success("Đã xóa bộ lọc");
+    };
+
+    window.addEventListener("clearFilters", handleClearFilters);
+    return () => window.removeEventListener("clearFilters", handleClearFilters);
+  }, []);
+
+  // ============================================================
+  // FETCH BOARD INFO
+  // ============================================================
   const fetchBoardInfo = async () => {
     try {
       setError(null);
@@ -66,7 +106,7 @@ export default function BoardDetailPage() {
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337"}/api/board/${id}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        },
+        }
       );
 
       if (!response.ok) {
@@ -90,6 +130,9 @@ export default function BoardDetailPage() {
     }
   };
 
+  // ============================================================
+  // FETCH ALL TASKS
+  // ============================================================
   const fetchAllTasks = async () => {
     if (!token) return;
     try {
@@ -98,7 +141,7 @@ export default function BoardDetailPage() {
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337"}/api/task?boardId=${id}&limit=100`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        },
+        }
       );
       const data = await response.json();
 
@@ -110,9 +153,30 @@ export default function BoardDetailPage() {
       }
 
       const boardTasks = tasksData.filter(
-        (task) => String(task.boardId) === String(id),
+        (task) => String(task.boardId) === String(id)
       );
-      setAllTasks(boardTasks);
+
+      setAllTasks((prev) => {
+        if (prev.length === boardTasks.length) {
+          const same = prev.every((prevTask, i) => {
+            const newTask = boardTasks[i];
+            return (
+              String(prevTask.id) === String(newTask.id) &&
+              prevTask.status === newTask.status &&
+              prevTask.title === newTask.title &&
+              prevTask.description === newTask.description &&
+              prevTask.priority === newTask.priority &&
+              prevTask.dueDate === newTask.dueDate &&
+              prevTask.assignedTo === newTask.assignedTo &&
+              prevTask.updatedAt === newTask.updatedAt
+            );
+          });
+          if (same) {
+            return prev;
+          }
+        }
+        return boardTasks;
+      });
     } catch (err) {
       console.error("Lỗi load task:", err);
       setAllTasks([]);
@@ -121,21 +185,76 @@ export default function BoardDetailPage() {
     }
   };
 
-  // ✅ Dùng useMemo để lọc tasks - tránh vòng lặp vô hạn
+  // ============================================================
+  // ✅ FETCH TRASH COUNT — ĐẾM SỐ TASK TRONG THÙNG RÁC
+  // ============================================================
+  const fetchTrashCount = async () => {
+    if (!token || !id) return;
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337"}/api/task/trash?boardId=${id}&limit=100`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("🗑️ [fetchTrashCount] response:", data);
+
+        // ✅ Parse theo nhiều format
+        let total = 0;
+        let allTrash = [];
+
+        if (Array.isArray(data)) {
+          allTrash = data;
+          total = allTrash.length;
+        } else if (data?.data && Array.isArray(data.data)) {
+          allTrash = data.data;
+          total = data.total ?? allTrash.length;
+        } else {
+          total = data.total ?? 0;
+        }
+
+        // ✅ Filter theo boardId nếu backend không filter
+        if (allTrash.length > 0) {
+          const boardTrash = allTrash.filter(
+            (t) => String(t.boardId) === String(id)
+          );
+          if (boardTrash.length !== allTrash.length) {
+            // Backend không filter theo boardId → tự filter
+            total = boardTrash.length;
+          }
+        }
+
+        console.log("🗑️ [fetchTrashCount] final total:", total);
+        setTrashCount(total);
+      } else {
+        console.warn(
+          "🗑️ [fetchTrashCount] Response not ok:",
+          response.status,
+          response.statusText
+        );
+      }
+    } catch (err) {
+      console.error("Lỗi fetch trash count:", err);
+    }
+  };
+
+  // ============================================================
+  // FILTERED TASKS
+  // ============================================================
   const filteredTasks = useMemo(() => {
     let result = [...allTasks];
 
-    // Lọc theo status
     if (searchParams.status) {
       result = result.filter((task) => task.status === searchParams.status);
     }
 
-    // Lọc theo priority
     if (searchParams.priority) {
       result = result.filter((task) => task.priority === searchParams.priority);
     }
 
-    // Lọc theo assignedTo
     if (searchParams.assignedTo) {
       if (searchParams.assignedTo === "me") {
         result = result.filter((task) => task.assignedTo === user?.id);
@@ -143,12 +262,11 @@ export default function BoardDetailPage() {
         result = result.filter((task) => !task.assignedTo);
       } else {
         result = result.filter(
-          (task) => task.assignedTo === searchParams.assignedTo,
+          (task) => task.assignedTo === searchParams.assignedTo
         );
       }
     }
 
-    // Tìm kiếm theo từ khóa (tiêu đề, mô tả, email)
     if (searchParams.search && searchParams.search.trim()) {
       const searchLower = searchParams.search.toLowerCase().trim();
       result = result.filter((task) => {
@@ -165,6 +283,9 @@ export default function BoardDetailPage() {
     return result;
   }, [allTasks, searchParams, user?.id]);
 
+  // ============================================================
+  // FETCH BOARD MEMBERS
+  // ============================================================
   const fetchBoardMembers = async () => {
     if (!token || !id) return;
     try {
@@ -173,7 +294,7 @@ export default function BoardDetailPage() {
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337"}/api/board/${id}/members`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        },
+        }
       );
 
       if (!response.ok) {
@@ -183,7 +304,6 @@ export default function BoardDetailPage() {
 
       const data = await response.json();
 
-      // ✅ SỬA Ở ĐÂY: Lấy mảng từ data.data
       if (data.success && Array.isArray(data.data)) {
         setBoardMembers(data.data);
       } else if (Array.isArray(data)) {
@@ -199,6 +319,9 @@ export default function BoardDetailPage() {
     }
   };
 
+  // ============================================================
+  // INVITE MEMBER
+  // ============================================================
   const handleInviteMember = async () => {
     if (!inviteEmail.trim()) {
       toast.warning("Vui lòng nhập email");
@@ -216,7 +339,7 @@ export default function BoardDetailPage() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ email: inviteEmail.trim() }),
-        },
+        }
       );
 
       if (!response.ok) {
@@ -246,7 +369,7 @@ export default function BoardDetailPage() {
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
-        },
+        }
       );
 
       if (!response.ok) {
@@ -261,8 +384,18 @@ export default function BoardDetailPage() {
     }
   };
 
-  const handleTaskUpdate = async () => {
-    await fetchAllTasks();
+  // ============================================================
+  // ✅ HANDLE TASK UPDATE — Refresh tasks + trash count
+  // ============================================================
+  const handleTaskUpdate = () => {
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+    fetchTimeoutRef.current = setTimeout(() => {
+      fetchAllTasks();
+      fetchTrashCount(); // ✅ Refresh trash count
+      fetchTimeoutRef.current = null;
+    }, 500);
   };
 
   const handleSearch = (searchTerm) => {
@@ -273,6 +406,9 @@ export default function BoardDetailPage() {
     setSearchParams((prev) => ({ ...prev, ...filters }));
   };
 
+  // ============================================================
+  // CREATE TASK
+  // ============================================================
   const handleCreateTask = async () => {
     if (!newTask.title.trim()) {
       toast.warning("Vui lòng nhập tiêu đề task");
@@ -297,7 +433,7 @@ export default function BoardDetailPage() {
             boardId: id,
             status: "todo",
           }),
-        },
+        }
       );
 
       if (!response.ok) {
@@ -322,6 +458,10 @@ export default function BoardDetailPage() {
     }
   };
 
+  const handleOpenTaskFromNotif = (task) => {
+    setOpenTaskFromNotif(task);
+  };
+
   const getTodayDate = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -339,9 +479,12 @@ export default function BoardDetailPage() {
     }
   };
 
+  // ============================================================
+  // ERROR / LOADING
+  // ============================================================
   if (error) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
+      <div className="h-screen flex flex-col items-center justify-center bg-gray-100">
         <div className="text-6xl mb-4">😢</div>
         <h2 className="text-xl font-semibold text-gray-800 mb-2">Lỗi</h2>
         <p className="text-gray-500 mb-6">{error}</p>
@@ -357,7 +500,7 @@ export default function BoardDetailPage() {
 
   if (loading && allTasks.length === 0 && !board) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="h-screen flex items-center justify-center bg-gray-100">
         <div className="text-xl">Đang tải board...</div>
       </div>
     );
@@ -372,12 +515,15 @@ export default function BoardDetailPage() {
     searchParams.assignedTo;
 
   const activeTasks = filteredTasks.filter((t) => !t.isDeleted);
-  const trashedTasks = filteredTasks.filter((t) => t.isDeleted === true);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200">
-      <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+    <div className="h-screen h-dvh flex flex-col bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
+      {/* ==========================================================
+          LAYER 1: HEADER
+          ========================================================== */}
+      <header className="flex-shrink-0 bg-white/80 backdrop-blur-sm shadow-sm border-b border-gray-200 z-10">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-3">
+          {/* Top row */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
@@ -400,7 +546,6 @@ export default function BoardDetailPage() {
               </button>
               <div className="flex items-center gap-2">
                 <span className="text-2xl">{board.icon || "📋"}</span>
-                {/* Ẩn tên board trên mobile, chỉ hiển thị trên desktop */}
                 <h1 className="text-xl md:text-2xl font-bold text-gray-800 hidden md:block">
                   {board.name}
                 </h1>
@@ -410,14 +555,13 @@ export default function BoardDetailPage() {
                   </span>
                 )}
               </div>
-              <button
-                onClick={() => router.push("/team")}
-                className="hidden sm:flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-              ></button>
             </div>
 
             <div className="flex items-center gap-3">
-              <NotificationBell tasks={allTasks} />
+              <NotificationBell
+                tasks={allTasks}
+                onOpenTask={handleOpenTaskFromNotif}
+              />
 
               {isOwner && (
                 <button
@@ -473,7 +617,9 @@ export default function BoardDetailPage() {
                     {user?.name?.split(" ")[0]}
                   </span>
                   <svg
-                    className={`w-3 h-3 text-gray-500 hidden md:block transition-transform ${showUserMenu ? "rotate-180" : ""}`}
+                    className={`w-3 h-3 text-gray-500 hidden md:block transition-transform ${
+                      showUserMenu ? "rotate-180" : ""
+                    }`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -538,6 +684,7 @@ export default function BoardDetailPage() {
             </div>
           </div>
 
+          {/* Tabs */}
           <div className="flex justify-center mt-3">
             <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-full sm:w-auto">
               <button
@@ -577,16 +724,19 @@ export default function BoardDetailPage() {
                     : "text-gray-600 hover:text-gray-900"
                 }`}
               >
-                🗑️ Thùng rác ({trashedTasks.length})
+                🗑️ Thùng rác ({trashCount})
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* ==========================================================
+          LAYER 2: MAIN
+          ========================================================== */}
+      <main className="flex-1 min-h-0 max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col">
         {!showStats && !showTrash && (
-          <div className="mb-6">
+          <div className="flex-shrink-0 mb-4">
             <SearchBar
               onSearch={handleSearch}
               onFilter={handleFilter}
@@ -596,55 +746,83 @@ export default function BoardDetailPage() {
           </div>
         )}
 
-        {showStats ? (
-          <DashboardStats tasks={allTasks} />
-        ) : showTrash ? (
-          <TrashView token={token} onTaskUpdate={handleTaskUpdate} />
-        ) : activeTasks.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-2xl shadow-sm">
-            <div className="w-24 h-24 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
-              <svg
-                className="w-12 h-12 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1}
-                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                />
-              </svg>
+        <div className="flex-1 min-h-0 overflow-y-auto md:overflow-visible scrollbar-thin">
+          {showStats ? (
+            <DashboardStats tasks={allTasks} />
+          ) : showTrash ? (
+            <TrashView
+              token={token}
+              onTaskUpdate={handleTaskUpdate}
+              onCountChange={setTrashCount}
+            />
+          ) : activeTasks.length === 0 ? (
+            <div className="min-h-full flex items-center justify-center py-8">
+              <div className="text-center py-20 bg-white rounded-2xl shadow-sm px-8 max-w-md">
+                <div className="w-24 h-24 mx-auto bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <svg
+                    className="w-12 h-12 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1}
+                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                    />
+                  </svg>
+                </div>
+                <p className="text-gray-500 text-lg">
+                  {hasActiveFilters
+                    ? "🔍 Không tìm thấy task nào phù hợp với bộ lọc"
+                    : `✨ Board "${board.name}" chưa có task nào`}
+                </p>
+                <p className="text-gray-400 text-sm mt-1">
+                  {hasActiveFilters
+                    ? "Hãy thử bộ lọc khác hoặc xóa bộ lọc"
+                    : "Hãy tạo task đầu tiên cho board này"}
+                </p>
+                {!hasActiveFilters && (
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="mt-4 bg-blue-500 hover:bg-blue-600 text-white px-5 py-2 rounded-lg text-sm transition"
+                  >
+                    + Tạo task đầu tiên
+                  </button>
+                )}
+              </div>
             </div>
-            <p className="text-gray-500 text-lg">
-              {hasActiveFilters
-                ? "🔍 Không tìm thấy task nào phù hợp với bộ lọc"
-                : `✨ Board "${board.name}" chưa có task nào`}
-            </p>
-            <p className="text-gray-400 text-sm mt-1">
-              {hasActiveFilters
-                ? "Hãy thử bộ lọc khác hoặc xóa bộ lọc"
-                : "Hãy tạo task đầu tiên cho board này"}
-            </p>
-            {!hasActiveFilters && (
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="mt-4 bg-blue-500 hover:bg-blue-600 text-white px-5 py-2 rounded-lg text-sm transition"
-              >
-                + Tạo task đầu tiên
-              </button>
-            )}
-          </div>
-        ) : (
-          <KanbanBoardWrapper
-            tasks={activeTasks}
-            token={token}
-            board={board}
-            onTaskUpdate={handleTaskUpdate}
-          />
-        )}
+          ) : (
+            <div className="h-full min-h-0">
+              <KanbanBoardWrapper
+                tasks={activeTasks}
+                token={token}
+                board={board}
+                onTaskUpdate={handleTaskUpdate}
+              />
+            </div>
+          )}
+        </div>
       </main>
+
+      {/* ==========================================================
+          MODALS
+          ========================================================== */}
+
+      {/* Modal EditTask từ notification */}
+      {openTaskFromNotif && (
+        <EditTaskModal
+          task={openTaskFromNotif}
+          token={token}
+          open={true}
+          onClose={() => setOpenTaskFromNotif(null)}
+          onSuccess={() => {
+            setOpenTaskFromNotif(null);
+            fetchAllTasks();
+          }}
+        />
+      )}
 
       {/* Modal tạo task */}
       {showCreateModal && (
@@ -815,7 +993,7 @@ export default function BoardDetailPage() {
                       Chưa có thành viên nào
                     </p>
                   ) : (
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                    <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-thin">
                       {boardMembers.map((member) => (
                         <div
                           key={member.id}

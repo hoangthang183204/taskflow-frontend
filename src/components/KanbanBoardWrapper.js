@@ -1,20 +1,23 @@
+// components/KanbanBoardWrapper.js
 "use client";
-import dynamic from 'next/dynamic';
-import { useEffect, useState } from 'react';
+import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 
-const KanbanBoard = dynamic(
-  () => import('@/components/KanbanBoard'),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-      </div>
-    ),
-  }
-);
+const KanbanBoard = dynamic(() => import("@/components/KanbanBoard"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex justify-center items-center h-64">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+    </div>
+  ),
+});
 
-export default function KanbanBoardWrapper({ tasks, token, board, onTaskUpdate }) {
+export default function KanbanBoardWrapper({
+  tasks,
+  token,
+  board,
+  onTaskUpdate,
+}) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -29,5 +32,12 @@ export default function KanbanBoardWrapper({ tasks, token, board, onTaskUpdate }
     );
   }
 
-  return <KanbanBoard tasks={tasks} token={token} board={board} onTaskUpdate={onTaskUpdate} />;
+  return (
+    <KanbanBoard
+      tasks={tasks}
+      token={token}
+      board={board}
+      onTaskUpdate={onTaskUpdate}
+    />
+  );
 }
