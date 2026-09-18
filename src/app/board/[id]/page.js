@@ -470,7 +470,9 @@ export default function BoardDetailPage() {
             />
           </svg>
         </div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-1">Có lỗi xảy ra</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-1">
+          Có lỗi xảy ra
+        </h2>
         <p className="text-sm text-gray-500 mb-6">{error}</p>
         <button
           onClick={() => router.push("/board")}
@@ -570,10 +572,11 @@ export default function BoardDetailPage() {
               {isOwner && (
                 <button
                   onClick={() => setShowInviteModal(true)}
-                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 hover:border-emerald-300 rounded-lg transition-colors flex-shrink-0"
+                  className="inline-flex items-center gap-1.5 p-1.5 sm:px-3 sm:py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 hover:border-emerald-300 rounded-lg transition-colors flex-shrink-0"
+                  title="Mời thành viên"
                 >
                   <svg
-                    className="w-3.5 h-3.5"
+                    className="w-4 h-4 sm:w-3.5 sm:h-3.5"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -585,7 +588,7 @@ export default function BoardDetailPage() {
                       d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
                     />
                   </svg>
-                  Mời thành viên
+                  <span className="hidden sm:inline">Mời thành viên</span>
                 </button>
               )}
 
@@ -838,7 +841,9 @@ export default function BoardDetailPage() {
 
           {/* Stats và Trash chỉ render khi cần */}
           {showStats && <DashboardStats tasks={allTasks} />}
-          {showTrash && <TrashView token={token} onTaskUpdate={handleTaskUpdate} />}
+          {showTrash && (
+            <TrashView token={token} onTaskUpdate={handleTaskUpdate} />
+          )}
         </div>
       </main>
 
