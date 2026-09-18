@@ -84,3 +84,8 @@ docker build -t taskflow-frontend .
 
 # Chạy container
 docker run -p 3000:3000 --env-file .env.local taskflow-frontend
+
+
+docker-compose build
+
+docker compose up --build
