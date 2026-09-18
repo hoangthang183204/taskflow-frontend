@@ -1,6 +1,11 @@
 // components/KanbanBoard.js
 "use client";
-import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useLayoutEffect,
+} from "react";
 import useAuthStore from "@/store/authStore";
 import {
   DndContext,
@@ -54,26 +59,32 @@ import {
   IconX,
 } from "./Icons";
 
+// ============================================================
+// COLUMNS CONFIG — với gradient đẹp
+// ============================================================
 const columns = [
   {
     id: "todo",
     title: "To Do",
-    color: "bg-gray-100",
-    headerColor: "bg-gray-500",
+    color: "bg-white",
+    headerColor: "bg-gradient-to-br from-slate-500 to-slate-600",
+    dotColor: "bg-slate-400",
     Icon: IconCircle,
   },
   {
     id: "doing",
     title: "Doing",
-    color: "bg-yellow-50",
-    headerColor: "bg-yellow-500",
+    color: "bg-white",
+    headerColor: "bg-gradient-to-br from-amber-500 to-orange-500",
+    dotColor: "bg-amber-400",
     Icon: IconCircleDot,
   },
   {
     id: "done",
     title: "Done",
-    color: "bg-green-50",
-    headerColor: "bg-green-500",
+    color: "bg-white",
+    headerColor: "bg-gradient-to-br from-emerald-500 to-green-600",
+    dotColor: "bg-emerald-400",
     Icon: IconCircleCheck,
   },
 ];
@@ -111,6 +122,12 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
     moveTask,
     removeTask,
   } = useOptimisticTasks({ todo: [], doing: [], done: [] });
+
+  // ✅ FIX: Ref cho shouldSkipSync để tránh re-render
+  const shouldSkipSyncRef = useRef(shouldSkipSync);
+  useEffect(() => {
+    shouldSkipSyncRef.current = shouldSkipSync;
+  }, [shouldSkipSync]);
 
   const [archivedTasks, setArchivedTasks] = useState([]);
   const [showArchived, setShowArchived] = useState(false);
@@ -191,7 +208,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
     onTaskUpdated: (task) => {
       const id = String(task.id);
 
-      if (shouldSkipSync(id)) return;
+      if (shouldSkipSyncRef.current(id)) return;
       if (isDraggingRef.current) return;
       if (recentReorderRef.current.has(id)) return;
 
@@ -303,19 +320,14 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   // SYNC tasks prop → state
   // ============================================================
   useEffect(() => {
-    if (isDraggingRef.current) {
-      console.log("⏭️ [sync effect] SKIP vì đang kéo");
-      return;
-    }
+    if (isDraggingRef.current) return;
 
     const signature = tasks
       .map((t) => `${t.id}:${t.updatedAt || t.createdAt}:${t.status}`)
       .sort()
       .join("|");
 
-    if (tasksSignatureRef.current === signature) {
-      return;
-    }
+    if (tasksSignatureRef.current === signature) return;
     tasksSignatureRef.current = signature;
 
     const activeTasks = tasks.filter((t) => !t.isArchived && !t.archivedAt);
@@ -323,14 +335,6 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
 
     const propActiveIds = new Set(activeTasks.map((t) => String(t.id)));
     const propArchivedIds = new Set(archived.map((t) => String(t.id)));
-
-    const pendingOrRecent = activeTasks.filter((t) => shouldSkipSync(t.id));
-    if (pendingOrRecent.length > 0) {
-      console.log(
-        "⏭️ [sync effect] Skip các task:",
-        pendingOrRecent.map((t) => t.id)
-      );
-    }
 
     setBoardTasks((prev) => {
       const allTasksMap = new Map();
@@ -342,7 +346,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
           if (wsArchivedRef.current.has(id)) continue;
           if (propArchivedIds.has(id)) continue;
 
-          if (shouldSkipSync(id)) {
+          if (shouldSkipSyncRef.current(id)) {
             if (!allTasksMap.has(id)) allTasksMap.set(id, t);
             continue;
           }
@@ -354,7 +358,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
         const id = String(t.id);
         if (wsDeletedRef.current.has(id)) continue;
         if (wsArchivedRef.current.has(id)) continue;
-        if (shouldSkipSync(id)) continue;
+        if (shouldSkipSyncRef.current(id)) continue;
 
         if (allTasksMap.has(id)) {
           allTasksMap.set(id, t);
@@ -367,7 +371,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
       for (const [id, task] of allTasksMap.entries()) {
         if (propActiveIds.has(id)) {
           finalMap.set(id, task);
-        } else if (shouldSkipSync(id)) {
+        } else if (shouldSkipSyncRef.current(id)) {
           finalMap.set(id, task);
         } else if (wsRestoredRef.current.has(id)) {
           finalMap.set(id, task);
@@ -422,7 +426,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
         const id = String(t.id);
         if (map.has(id)) continue;
         if (wsDeletedRef.current.has(id)) continue;
-        if (shouldSkipSync(id)) {
+        if (shouldSkipSyncRef.current(id)) {
           map.set(id, t);
           continue;
         }
@@ -530,28 +534,31 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   const getPriorityBadge = (priority) => {
     const config = {
       low: {
-        color: "bg-green-500",
-        bg: "bg-green-50",
-        text: "text-green-700",
+        color: "bg-emerald-500",
+        bg: "bg-emerald-50",
+        text: "text-emerald-700",
+        border: "border-emerald-100",
         label: "Thấp",
       },
       medium: {
-        color: "bg-yellow-500",
-        bg: "bg-yellow-50",
-        text: "text-yellow-700",
+        color: "bg-amber-500",
+        bg: "bg-amber-50",
+        text: "text-amber-700",
+        border: "border-amber-100",
         label: "Trung",
       },
       high: {
         color: "bg-red-500",
         bg: "bg-red-50",
         text: "text-red-700",
+        border: "border-red-100",
         label: "Cao",
       },
     };
     const c = config[priority] || config.medium;
     return (
       <span
-        className={`inline-flex items-center gap-1 text-[10px] ${c.bg} ${c.text} px-1.5 py-0.5 rounded font-medium`}
+        className={`inline-flex items-center gap-1 text-[10px] ${c.bg} ${c.text} px-1.5 py-0.5 rounded-md font-medium border ${c.border}`}
       >
         <span className={`w-1.5 h-1.5 rounded-full ${c.color}`} />
         {c.label}
@@ -967,7 +974,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   };
 
   // ============================================================
-  // ✅ TASK CARD CONTENT — FIX MOBILE ACTIONS
+  // ✅ TASK CARD CONTENT — Redesigned
   // ============================================================
   const TaskCardContent = ({ task, isGhost = false }) => {
     const isEditing = editingTask === task.id;
@@ -979,37 +986,41 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
 
     return (
       <div
-        className={`group bg-white rounded-md shadow-sm relative transition-all duration-150 hover:shadow-md border border-gray-200 ${
-          isTaskPending ? "opacity-70 ring-1 ring-blue-300" : ""
-        } ${isGhost ? "ring-2 ring-blue-400" : ""}`}
+        className={`group relative rounded-lg transition-all duration-200 ${
+          isGhost
+            ? "bg-white border-2 border-blue-400 shadow-2xl"
+            : isTaskPending
+            ? "bg-white border border-blue-200 opacity-70 shadow-[0_2px_8px_rgba(59,130,246,0.15)]"
+            : "bg-white border border-gray-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] hover:border-gray-300 hover:-translate-y-0.5"
+        }`}
       >
         {!isGhost && <PendingOverlay show={isTaskPending} />}
         {isTaskLoading && !isTaskPending && !isGhost && (
-          <div className="absolute right-1.5 top-1.5 z-10">
+          <div className="absolute right-2 top-2 z-10">
             <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
           </div>
         )}
 
-        <div className="p-2">
+        <div className="p-3">
           {isEditing ? (
-            <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
+            <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
               <input
                 type="text"
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                className="w-full border border-blue-500 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full border border-blue-500 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
                 placeholder="Tiêu đề task"
               />
               <textarea
                 value={editDesc}
                 onChange={(e) => setEditDesc(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition resize-none"
                 rows="2"
                 placeholder="Mô tả task"
               />
-              <div className="flex gap-1.5">
+              <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="block text-[10px] text-gray-500 mb-0.5">
+                  <label className="block text-[10px] font-medium text-gray-500 mb-1">
                     Hạn chót
                   </label>
                   <input
@@ -1017,17 +1028,17 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                     value={editDueDate}
                     onChange={(e) => setEditDueDate(e.target.value)}
                     min={getTodayDate()}
-                    className="w-full border border-gray-300 rounded-md px-1.5 py-1 text-xs"
+                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-[10px] text-gray-500 mb-0.5">
+                  <label className="block text-[10px] font-medium text-gray-500 mb-1">
                     Ưu tiên
                   </label>
                   <select
                     value={editPriority}
                     onChange={(e) => setEditPriority(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-1.5 py-1 text-xs"
+                    className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
                   >
                     <option value="low">Thấp</option>
                     <option value="medium">Trung bình</option>
@@ -1035,16 +1046,16 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                   </select>
                 </div>
               </div>
-              <div className="flex gap-1.5 pt-1">
+              <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => saveEdit(task.id)}
-                  className="flex-1 px-2 py-1 bg-green-500 text-white rounded-md text-xs hover:bg-green-600"
+                  className="flex-1 px-3 py-1.5 bg-blue-500 text-white rounded-md text-xs font-medium hover:bg-blue-600 transition"
                 >
                   Lưu
                 </button>
                 <button
                   onClick={cancelEdit}
-                  className="flex-1 px-2 py-1 bg-gray-300 text-gray-700 rounded-md text-xs hover:bg-gray-400"
+                  className="flex-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-md text-xs font-medium hover:bg-gray-200 transition"
                 >
                   Hủy
                 </button>
@@ -1053,8 +1064,8 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
           ) : (
             <>
               <h4
-                className={`font-medium text-gray-800 mb-1 text-[13px] leading-snug line-clamp-2 pr-6 ${
-                  isDone ? "line-through text-gray-400" : ""
+                className={`font-semibold text-gray-800 mb-1 text-[13px] leading-snug line-clamp-2 pr-6 ${
+                  isDone ? "line-through text-gray-400 font-normal" : ""
                 }`}
               >
                 {task.title}
@@ -1062,7 +1073,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
 
               {task.description && (
                 <p
-                  className={`text-[11px] text-gray-500 mb-1.5 line-clamp-2 leading-snug ${
+                  className={`text-[11px] text-gray-500 mb-2 line-clamp-2 leading-relaxed ${
                     isDone ? "text-gray-400" : ""
                   }`}
                 >
@@ -1070,16 +1081,16 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                 </p>
               )}
 
-              <div className="flex flex-wrap items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {task.assignedTo && (
                   <>
                     {task.assignedTo === currentUserId ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-md font-medium">
                         <IconUser className="w-3 h-3" />
                         Tôi
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium truncate max-w-[80px]">
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-violet-50 text-violet-700 border border-violet-100 px-1.5 py-0.5 rounded-md font-medium truncate max-w-[90px]">
                         <IconUser className="w-3 h-3 flex-shrink-0" />
                         <span className="truncate">
                           {task.assignedByName || "TV"}
@@ -1090,7 +1101,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                 )}
 
                 {task.userId === currentUserId && !task.assignedTo && (
-                  <span className="inline-flex items-center gap-1 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">
+                  <span className="inline-flex items-center gap-1 text-[10px] bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded-md font-medium">
                     <IconUser className="w-3 h-3" />
                     Tôi tạo
                   </span>
@@ -1099,7 +1110,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                 {getPriorityBadge(task.priority)}
 
                 {task.dueDate && !isDone && (
-                  <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-500">
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-500 font-medium">
                     <IconCalendar className="w-3 h-3" />
                     {new Date(task.dueDate).toLocaleDateString("vi-VN", {
                       day: "2-digit",
@@ -1114,14 +1125,14 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
           )}
         </div>
 
-        {/* ✅ ACTIONS — Luôn hiện trên mobile, hover trên desktop */}
+        {/* ACTIONS */}
         {!isEditing && !isGhost && (
-          <div className="flex border-t border-gray-100 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+          <div className="flex border-t border-gray-100 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
             {!isDone && (
               <button
                 onClick={() => openEditModal(task)}
                 disabled={isTaskPending}
-                className="flex-1 py-2 md:py-1.5 text-gray-500 hover:bg-gray-50 hover:text-yellow-600 text-xs flex items-center justify-center disabled:opacity-50 transition-colors"
+                className="flex-1 py-2 md:py-1.5 text-gray-400 hover:bg-gray-50 hover:text-amber-600 text-xs flex items-center justify-center disabled:opacity-50 transition-colors"
                 title="Sửa"
               >
                 <IconEdit className="w-4 h-4 md:w-3.5 md:h-3.5" />
@@ -1135,7 +1146,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                   setShowAssignModal(true);
                 }}
                 disabled={isTaskPending}
-                className="flex-1 py-2 md:py-1.5 text-gray-500 hover:bg-gray-50 hover:text-blue-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
+                className="flex-1 py-2 md:py-1.5 text-gray-400 hover:bg-gray-50 hover:text-blue-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
                 title="Giao cho"
               >
                 <IconUser className="w-4 h-4 md:w-3.5 md:h-3.5" />
@@ -1146,7 +1157,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
               <button
                 onClick={() => handleArchive(task.id)}
                 disabled={isTaskPending}
-                className="flex-1 py-2 md:py-1.5 text-gray-500 hover:bg-gray-50 hover:text-purple-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
+                className="flex-1 py-2 md:py-1.5 text-gray-400 hover:bg-gray-50 hover:text-violet-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
                 title="Lưu trữ"
               >
                 <IconArchive className="w-4 h-4 md:w-3.5 md:h-3.5" />
@@ -1157,7 +1168,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
               <button
                 onClick={() => handleSoftDelete(task.id)}
                 disabled={isTaskPending}
-                className="flex-1 py-2 md:py-1.5 text-gray-500 hover:bg-gray-50 hover:text-red-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
+                className="flex-1 py-2 md:py-1.5 text-gray-400 hover:bg-gray-50 hover:text-red-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
                 title="Xóa"
               >
                 <IconTrash className="w-4 h-4 md:w-3.5 md:h-3.5" />
@@ -1168,7 +1179,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
               <button
                 onClick={() => openTimer(task)}
                 disabled={isTaskPending}
-                className="flex-1 py-2 md:py-1.5 text-gray-500 hover:bg-gray-50 hover:text-blue-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
+                className="flex-1 py-2 md:py-1.5 text-gray-400 hover:bg-gray-50 hover:text-blue-600 text-xs flex items-center justify-center border-l border-gray-100 disabled:opacity-50 transition-colors"
                 title="Timer"
               >
                 <IconClock className="w-4 h-4 md:w-3.5 md:h-3.5" />
@@ -1181,7 +1192,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   };
 
   // ============================================================
-  // DESKTOP COLUMN
+  // DESKTOP COLUMN — Redesigned
   // ============================================================
   const DesktopColumnContent = ({ columnId, tasks }) => {
     const { setNodeRef } = useDroppable({ id: `column-${columnId}` });
@@ -1206,17 +1217,19 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
     if (isCollapsed) {
       return (
         <div
-          className={`${column?.color} rounded-lg h-full w-10 flex flex-col items-center py-2 cursor-pointer transition hover:shadow-md`}
+          className={`${column?.color} border border-gray-200/80 rounded-xl h-full w-11 flex flex-col items-center py-3 cursor-pointer transition-all hover:shadow-md hover:border-gray-300 shadow-sm`}
           onClick={() =>
             setCollapsed((prev) => ({ ...prev, [columnId]: false }))
           }
           title="Click để mở rộng"
         >
-          <button className={`${column?.headerColor} text-white p-1.5 rounded`}>
+          <button
+            className={`${column?.headerColor} text-white p-2 rounded-lg shadow-sm`}
+          >
             <ColumnIcon className="w-4 h-4" />
           </button>
           <span
-            className="mt-2 text-xs font-semibold text-gray-700"
+            className="mt-3 text-xs font-semibold text-gray-600"
             style={{ writingMode: "vertical-rl" }}
           >
             {column?.title} ({tasks.length})
@@ -1226,16 +1239,15 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
     }
 
     return (
-      <div
-        className={`${column?.color} rounded-lg flex flex-col h-full overflow-hidden`}
-      >
+      <div className="bg-white border border-gray-200/80 rounded-xl flex flex-col h-full overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        {/* HEADER */}
         <div
-          className={`${column?.headerColor} text-white px-2.5 py-1.5 flex justify-between items-center flex-shrink-0 rounded-t-lg`}
+          className={`${column?.headerColor} text-white px-3 py-2.5 flex justify-between items-center flex-shrink-0`}
         >
-          <h3 className="font-semibold text-xs flex items-center gap-1.5">
+          <h3 className="font-semibold text-xs flex items-center gap-2">
             <ColumnIcon className="w-3.5 h-3.5" />
             {column?.title}
-            <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-[10px] font-medium">
+            <span className="bg-white/25 backdrop-blur-sm px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
               {tasks.length}
             </span>
           </h3>
@@ -1244,27 +1256,28 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
               e.stopPropagation();
               setCollapsed((prev) => ({ ...prev, [columnId]: true }));
             }}
-            className="text-white/70 hover:text-white transition p-0.5 rounded hover:bg-white/10"
+            className="text-white/70 hover:text-white transition p-0.5 rounded hover:bg-white/15"
             title="Thu gọn cột"
           >
             <IconChevronLeft className="w-3.5 h-3.5" />
           </button>
         </div>
 
+        {/* BODY */}
         <div
           ref={(node) => {
             setNodeRef(node);
             scrollRef.current = node;
           }}
           onScroll={handleScroll}
-          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-1.5 scrollbar-thin"
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 scrollbar-thin bg-[#fafbfc]"
           style={{ touchAction: "pan-y" }}
         >
           <SortableContext
             items={tasks.map((t) => String(t.id))}
             strategy={verticalListSortingStrategy}
           >
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {tasks.map((task) => (
                 <SortableTaskCard
                   key={String(task.id)}
@@ -1275,24 +1288,35 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                 </SortableTaskCard>
               ))}
               {tasks.length === 0 && (
-                <div className="text-center text-gray-400 text-[11px] py-4 border border-dashed border-gray-300 rounded-md bg-white/30">
-                  Kéo task vào đây
+                <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                  <div className="w-14 h-14 rounded-full bg-white border-2 border-dashed border-gray-200 flex items-center justify-center mb-3 shadow-sm">
+                    <IconPlus className="w-6 h-6 text-gray-300" />
+                  </div>
+                  <p className="text-xs text-gray-400 font-medium">
+                    Chưa có task nào
+                  </p>
+                  <p className="text-[10px] text-gray-300 mt-1">
+                    Kéo thả task vào đây
+                  </p>
                 </div>
               )}
             </div>
           </SortableContext>
         </div>
 
+        {/* FOOTER */}
         {columnId === "todo" && (
-          <div className="flex-shrink-0 p-1.5 border-t border-gray-200/50 bg-white/30">
+          <div className="flex-shrink-0 p-2 border-t border-gray-100 bg-white">
             <button
               onClick={() => {
                 window.dispatchEvent(new CustomEvent("openCreateTaskModal"));
               }}
-              className="w-full text-left text-xs text-gray-500 hover:text-gray-700 hover:bg-white/70 rounded-md p-1.5 transition flex items-center gap-1.5"
+              className="w-full text-left text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-50 rounded-lg px-2 py-2 transition flex items-center gap-2 group"
             >
-              <IconPlus className="w-3.5 h-3.5" />
-              Thêm task
+              <div className="w-5 h-5 rounded-md bg-gray-100 group-hover:bg-gray-200 flex items-center justify-center transition-colors flex-shrink-0">
+                <IconPlus className="w-3 h-3 text-gray-500 group-hover:text-gray-700" />
+              </div>
+              <span className="font-medium">Thêm task</span>
             </button>
           </div>
         )}
@@ -1314,7 +1338,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
       <div
         ref={setNodeRef}
         className={`transition-all duration-200 rounded-lg ${
-          isOver ? "bg-blue-100 ring-2 ring-blue-500" : ""
+          isOver ? "bg-blue-50 ring-2 ring-blue-400" : ""
         }`}
         style={{ minHeight: "80px", touchAction: "pan-y" }}
       >
@@ -1339,7 +1363,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
 
     return (
       <div
-        className={`rotate-2 scale-105 shadow-2xl ${
+        className={`rotate-2 scale-105 ${
           isMobileView ? "w-[80vw] max-w-[280px]" : "w-[280px]"
         }`}
         style={{ transformOrigin: "center center" }}
@@ -1364,9 +1388,9 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
         >
           <button
             onClick={() => setShowArchived(!showArchived)}
-            className="w-full bg-purple-100 text-purple-700 p-2.5 rounded-lg flex justify-between items-center text-xs font-medium"
+            className="w-full bg-white border border-violet-200 text-violet-700 p-3 rounded-xl flex justify-between items-center text-xs font-medium shadow-sm hover:shadow-md transition-all"
           >
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-2">
               <IconPackage className="w-4 h-4" />
               Kho lưu trữ ({archivedTasks.length})
             </span>
@@ -1378,25 +1402,25 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
           </button>
 
           {showArchived && archivedTasks.length > 0 && (
-            <div className="bg-purple-50 rounded-lg p-2">
+            <div className="bg-white border border-violet-100 rounded-xl p-2.5 shadow-sm">
               {dedupById(archivedTasks).map((task) => (
                 <div
                   key={String(task.id)}
-                  className="bg-white rounded-md shadow-sm p-2 mb-1.5 relative"
+                  className="bg-gray-50 rounded-lg p-2.5 mb-2 last:mb-0 relative"
                 >
                   <PendingOverlay show={isPending(task.id)} />
                   <h4 className="font-medium text-gray-800 text-xs">
                     {task.title}
                   </h4>
-                  <p className="text-[10px] text-gray-500">
+                  <p className="text-[10px] text-gray-500 mt-0.5">
                     {task.description || "Không có mô tả"}
                   </p>
-                  <div className="flex justify-between items-center mt-1.5">
+                  <div className="flex justify-between items-center mt-2">
                     {getPriorityBadge(task.priority)}
                     <button
                       onClick={() => handleRestore(task.id)}
                       disabled={isPending(task.id)}
-                      className="text-xs text-green-600 hover:text-green-700 disabled:opacity-50 inline-flex items-center gap-1"
+                      className="text-xs text-emerald-600 hover:text-emerald-700 disabled:opacity-50 inline-flex items-center gap-1 font-medium"
                     >
                       <IconRefresh className="w-3 h-3" />
                       Khôi phục
@@ -1421,9 +1445,9 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
               return (
                 <div
                   key={column.id}
-                  className={`${column.color} rounded-lg overflow-hidden mb-2 transition-all duration-200 ${
+                  className={`bg-white border border-gray-200/80 rounded-xl overflow-hidden mb-3 shadow-sm transition-all duration-200 ${
                     dragOverColumnId === column.id
-                      ? "ring-2 ring-blue-500 shadow-lg"
+                      ? "ring-2 ring-blue-400 shadow-lg"
                       : ""
                   }`}
                   style={{ touchAction: "pan-y" }}
@@ -1436,14 +1460,14 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                         );
                       }
                     }}
-                    className={`w-full ${column.headerColor} text-white px-3 py-2 flex justify-between items-center`}
+                    className={`w-full ${column.headerColor} text-white px-3 py-2.5 flex justify-between items-center`}
                   >
-                    <span className="font-semibold text-xs inline-flex items-center gap-1.5">
+                    <span className="font-semibold text-xs inline-flex items-center gap-2">
                       <ColumnIcon className="w-3.5 h-3.5" />
                       {column.title}
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-[10px] font-medium">
+                      <span className="bg-white/25 backdrop-blur-sm px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
                         {boardTasks[column.id].length}
                       </span>
                       {!isDragging && (
@@ -1457,16 +1481,24 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                   </button>
 
                   {shouldShowContent && (
-                    <div className="p-2" style={{ touchAction: "pan-y" }}>
+                    <div
+                      className="p-2.5 bg-[#fafbfc]"
+                      style={{ touchAction: "pan-y" }}
+                    >
                       <MobileDroppableColumn columnId={column.id}>
                         <SortableContext
                           items={boardTasks[column.id].map((t) => String(t.id))}
                           strategy={verticalListSortingStrategy}
                         >
-                          <div className="space-y-1.5">
+                          <div className="space-y-2">
                             {boardTasks[column.id].length === 0 && (
-                              <div className="text-center text-gray-400 text-[11px] py-4 border border-dashed border-gray-300 rounded-md bg-white/50">
-                                Kéo task vào đây
+                              <div className="flex flex-col items-center justify-center py-8 text-center">
+                                <div className="w-12 h-12 rounded-full bg-white border-2 border-dashed border-gray-200 flex items-center justify-center mb-2">
+                                  <IconPlus className="w-5 h-5 text-gray-300" />
+                                </div>
+                                <p className="text-[11px] text-gray-400">
+                                  Chưa có task nào
+                                </p>
                               </div>
                             )}
                             {boardTasks[column.id].map((task) => (
@@ -1532,16 +1564,16 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
 
         {showAssignModal && selectedTaskForAssign && (
           <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
               <div className="p-5">
-                <div className="flex justify-between items-center mb-3">
+                <div className="flex justify-between items-center mb-4">
                   <h2 className="text-base font-bold text-gray-800 inline-flex items-center gap-2">
                     <IconUser className="w-4 h-4" />
                     Gán task
                   </h2>
                   <button
                     onClick={() => setShowAssignModal(false)}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition"
                   >
                     <IconX className="w-4 h-4" />
                   </button>
@@ -1559,16 +1591,16 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                         )
                       }
                       disabled={assigning}
-                      className="w-full text-left p-2 rounded-lg hover:bg-gray-50 transition flex items-center gap-2 border text-xs disabled:opacity-50"
+                      className="w-full text-left p-2.5 rounded-lg hover:bg-gray-50 transition flex items-center gap-3 border border-gray-200 text-xs disabled:opacity-50"
                     >
-                      <div className="w-6 h-6 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full flex items-center justify-center text-white text-[10px] font-semibold">
+                      <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-violet-500 rounded-full flex items-center justify-center text-white text-[11px] font-semibold flex-shrink-0">
                         {member.name?.charAt(0).toUpperCase()}
                       </div>
-                      <div>
-                        <p className="font-medium text-gray-800">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-800 truncate">
                           {member.name}
                         </p>
-                        <p className="text-[10px] text-gray-500">
+                        <p className="text-[10px] text-gray-500 truncate">
                           {member.email}
                         </p>
                       </div>
@@ -1579,7 +1611,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                 <div className="flex gap-2 mt-4">
                   <button
                     onClick={() => setShowAssignModal(false)}
-                    className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-xs"
+                    className="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-xs font-medium hover:bg-gray-200 transition"
                   >
                     Hủy
                   </button>
@@ -1597,8 +1629,8 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
   // ============================================================
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="mb-2 flex justify-between items-center flex-shrink-0">
-        <div className="text-xs text-gray-500 inline-flex items-center gap-1.5">
+      <div className="mb-3 flex justify-between items-center flex-shrink-0">
+        <div className="text-xs text-gray-500 inline-flex items-center gap-1.5 font-medium">
           <IconListChecks className="w-3.5 h-3.5" />
           {boardTasks.todo.length +
             boardTasks.doing.length +
@@ -1607,10 +1639,10 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
         </div>
         <button
           onClick={() => setShowArchived(!showArchived)}
-          className={`px-2.5 py-1 rounded-md transition flex items-center gap-1.5 text-xs font-medium ${
+          className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-xs font-medium shadow-sm ${
             showArchived
-              ? "bg-purple-500 text-white shadow-sm"
-              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+              ? "bg-violet-500 text-white shadow-md"
+              : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 hover:border-gray-300"
           }`}
         >
           <IconPackage className="w-3.5 h-3.5" />
@@ -1626,10 +1658,10 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
         onDragCancel={handleDragCancel}
       >
         <div
-          className="grid gap-3 flex-1 min-h-0 justify-center"
+          className="grid gap-4 flex-1 min-h-0 justify-center"
           style={{
             gridTemplateColumns: columns
-              .map((c) => (collapsed[c.id] ? "40px" : "minmax(280px, 340px)"))
+              .map((c) => (collapsed[c.id] ? "44px" : "minmax(280px, 340px)"))
               .join(" "),
           }}
         >
@@ -1654,23 +1686,23 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
       </DndContext>
 
       {showArchived && archivedTasks.length > 0 && (
-        <div className="mt-3 flex-shrink-0 max-h-[25vh] overflow-y-auto scrollbar-thin">
-          <div className="bg-purple-50 rounded-lg p-3">
-            <h3 className="text-sm font-semibold text-purple-800 mb-2 inline-flex items-center gap-1.5">
+        <div className="mt-4 flex-shrink-0 max-h-[25vh] overflow-y-auto scrollbar-thin">
+          <div className="bg-white border border-violet-100 rounded-xl p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-violet-800 mb-3 inline-flex items-center gap-2">
               <IconPackage className="w-4 h-4" />
               Kho lưu trữ ({archivedTasks.length} task)
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {dedupById(archivedTasks).map((task) => (
                 <div
                   key={String(task.id)}
-                  className="bg-white rounded-md shadow-sm p-2 relative"
+                  className="bg-gray-50 rounded-lg p-3 relative border border-gray-100"
                 >
                   <PendingOverlay show={isPending(task.id)} />
-                  <h4 className="font-medium text-gray-800 mb-0.5 text-xs">
+                  <h4 className="font-medium text-gray-800 mb-1 text-xs">
                     {task.title}
                   </h4>
-                  <p className="text-[10px] text-gray-500 mb-1.5 line-clamp-1">
+                  <p className="text-[10px] text-gray-500 mb-2 line-clamp-1">
                     {task.description || "Không có mô tả"}
                   </p>
                   <div className="flex justify-between items-center">
@@ -1678,7 +1710,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                     <button
                       onClick={() => handleRestore(task.id)}
                       disabled={isPending(task.id)}
-                      className="text-gray-400 hover:text-green-600 disabled:opacity-50"
+                      className="text-gray-400 hover:text-emerald-600 disabled:opacity-50 transition-colors"
                       title="Khôi phục"
                     >
                       <IconRefresh className="w-3.5 h-3.5" />
@@ -1725,35 +1757,37 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
 
       {showAssignModal && selectedTaskForAssign && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="p-5">
-              <div className="flex justify-between items-center mb-3">
+              <div className="flex justify-between items-center mb-4">
                 <h2 className="text-base font-bold text-gray-800 inline-flex items-center gap-2">
                   <IconUser className="w-4 h-4" />
                   Gán task cho thành viên
                 </h2>
                 <button
                   onClick={() => setShowAssignModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition"
                 >
                   <IconX className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="mb-3 p-2 bg-gray-50 rounded-md">
-                <p className="text-[10px] text-gray-500">Task</p>
+              <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5 font-medium">
+                  Task
+                </p>
                 <p className="font-medium text-gray-800 text-sm">
                   {selectedTaskForAssign.title}
                 </p>
               </div>
 
-              <div className="space-y-1.5 max-h-60 overflow-y-auto scrollbar-thin">
+              <div className="space-y-2 max-h-60 overflow-y-auto scrollbar-thin">
                 {loadingMembers ? (
-                  <p className="text-center text-gray-500 py-3 text-xs">
+                  <p className="text-center text-gray-500 py-4 text-xs">
                     Đang tải...
                   </p>
                 ) : boardMembers.length === 0 ? (
-                  <p className="text-center text-gray-500 py-3 text-xs">
+                  <p className="text-center text-gray-500 py-4 text-xs">
                     Chưa có thành viên nào
                   </p>
                 ) : (
@@ -1768,16 +1802,16 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
                         )
                       }
                       disabled={assigning}
-                      className="w-full text-left p-2 rounded-lg hover:bg-gray-50 transition flex items-center gap-2 border text-xs disabled:opacity-50"
+                      className="w-full text-left p-2.5 rounded-lg hover:bg-gray-50 transition flex items-center gap-3 border border-gray-200 text-xs disabled:opacity-50"
                     >
-                      <div className="w-7 h-7 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full flex items-center justify-center text-white text-[11px] font-semibold">
+                      <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-violet-500 rounded-full flex items-center justify-center text-white text-[11px] font-semibold flex-shrink-0">
                         {member.name?.charAt(0).toUpperCase()}
                       </div>
-                      <div>
-                        <p className="font-medium text-gray-800">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-800 truncate">
                           {member.name}
                         </p>
-                        <p className="text-[10px] text-gray-500">
+                        <p className="text-[10px] text-gray-500 truncate">
                           {member.email}
                         </p>
                       </div>
@@ -1789,7 +1823,7 @@ export default function KanbanBoard({ tasks, token, board, onTaskUpdate }) {
               <div className="flex gap-2 mt-4">
                 <button
                   onClick={() => setShowAssignModal(false)}
-                  className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-xs hover:bg-gray-300"
+                  className="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-xs font-medium hover:bg-gray-200 transition"
                 >
                   Hủy
                 </button>

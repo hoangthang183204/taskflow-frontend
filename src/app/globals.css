@@ -395,3 +395,54 @@ body {
     background-color: transparent;
   }
 }
+
+/* ============================================================
+   ✅ SCROLLBAR ĐẸP HƠN
+   ============================================================ */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 114, 128, 0.5);
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+}
+
+/* ============================================================
+   ✅ SCROLL STABLE — Tránh layout shift
+   ============================================================ */
+html {
+  overflow-y: scroll;
+}
+
+.scrollbar-thin {
+  scrollbar-gutter: stable;
+}
+
+/* ============================================================
+   ✅ CARD PREVENT FLICKER
+   ============================================================ */
+.sortable-task-card {
+  contain: layout style;
+  backface-visibility: hidden;
+}
+
+.sortable-task-card[data-dragging="true"] {
+  transition: none !important;
+  will-change: transform;
+}

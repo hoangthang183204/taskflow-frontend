@@ -1,8 +1,14 @@
+// services/api.js
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
 
+// ============================================================
+// ✅ FETCH WRAPPER — Xử lý Rate Limit 429 + Auth 401
+// ============================================================
 const fetchAPI = async (endpoint, options = {}) => {
   // Tự động lấy token
   const getToken = () => {
+    if (typeof window === "undefined") return null;
+
     let token = localStorage.getItem("token");
     if (!token) {
       const cookies = document.cookie.split("; ");
@@ -21,13 +27,68 @@ const fetchAPI = async (endpoint, options = {}) => {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }), // Tự động thêm token
+      ...(token && { Authorization: `Bearer ${token}` }),
       ...options.headers,
     },
   });
 
-  const data = await response.json();
+  // ✅ Parse JSON an toàn (phòng khi response không phải JSON)
+  const data = await response.json().catch(() => ({}));
 
+  // ============================================================
+  // ✅ RATE LIMIT (429) — Hiện toast cảnh báo
+  // ============================================================
+  if (response.status === 429) {
+    const retryAfter = data.retryAfter || 60;
+
+    if (typeof window !== "undefined") {
+      const { toast } = await import("sonner");
+      const minutes = Math.ceil(retryAfter / 60);
+
+      toast.error("Quá nhiều yêu cầu", {
+        description:
+          retryAfter > 60
+            ? `Vui lòng thử lại sau ${minutes} phút`
+            : `Vui lòng thử lại sau ${retryAfter} giây`,
+        duration: Math.min(retryAfter * 1000, 10000),
+      });
+    }
+
+    throw new Error(data.message || "RATE_LIMIT_EXCEEDED");
+  }
+
+  // ============================================================
+  // ✅ AUTH (401) — Auto logout nếu token hết hạn
+  // ============================================================
+  if (response.status === 401) {
+    if (typeof window !== "undefined") {
+      const { toast } = await import("sonner");
+
+      if (data.code === "TOKEN_EXPIRED") {
+        toast.error("Phiên đăng nhập hết hạn", {
+          description: "Vui lòng đăng nhập lại",
+        });
+      }
+
+      // Auto logout cho cả NO_TOKEN và TOKEN_EXPIRED
+      if (data.code === "TOKEN_EXPIRED" || data.code === "NO_TOKEN") {
+        localStorage.removeItem("token");
+
+        // Chỉ redirect nếu chưa ở trang login
+        if (!window.location.pathname.includes("/login")) {
+          setTimeout(() => {
+            window.location.href = "/login";
+          }, 1000);
+        }
+      }
+    }
+
+    throw new Error(data.message || "UNAUTHORIZED");
+  }
+
+  // ============================================================
+  // ✅ OTHER ERRORS
+  // ============================================================
   if (!response.ok) {
     throw new Error(data.message || "API Error");
   }
@@ -77,8 +138,15 @@ export const changePassword = async (token, passwordData) => {
   return result;
 };
 
-// ==================== TASK APIs ====================
+export const deleteAccount = async (token) => {
+  const result = await fetchAPI("/api/auth/delete", {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return result;
+};
 
+// ==================== TASK APIs ====================
 export const getTasks = async (token, params = {}) => {
   const cleanParams = {};
   if (params.page) cleanParams.page = params.page;
@@ -174,14 +242,6 @@ export const getTrashTasks = async (token, params = {}) => {
   return result;
 };
 
-export const deleteAccount = async (token) => {
-  const result = await fetchAPI("/api/auth/delete", {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return result;
-};
-
 // ==================== BOARD APIs ====================
 export const getMyBoards = async (token) => {
   const result = await fetchAPI("/api/board", {
@@ -227,6 +287,38 @@ export const updateBoard = async (token, boardId, boardData) => {
 
 export const deleteBoard = async (token, boardId) => {
   const result = await fetchAPI(`/api/board/${boardId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return result;
+};
+
+// ==================== BOARD MEMBER APIs ====================
+export const getBoardMembers = async (token, boardId) => {
+  const result = await fetchAPI(`/api/board/${boardId}/members`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return result.data || result;
+};
+
+export const getAssignableMembers = async (token, boardId) => {
+  const result = await fetchAPI(`/api/board/${boardId}/members/assignable`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return result.data || result;
+};
+
+export const addBoardMember = async (token, boardId, email, role = "member") => {
+  const result = await fetchAPI(`/api/board/${boardId}/members`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ email, role }),
+  });
+  return result.data || result;
+};
+
+export const removeBoardMember = async (token, boardId, userId) => {
+  const result = await fetchAPI(`/api/board/${boardId}/members/${userId}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
